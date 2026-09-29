@@ -10,5 +10,5 @@ export default defineConfig({
     port: 5173,
     proxy: { '/rpc': 'http://127.0.0.1:8787', '/events': 'http://127.0.0.1:8787' },
   },
-  test: { environment: 'node' },
+  test: { environment: 'node', include: ['src/**/*.test.ts'] },
 })
