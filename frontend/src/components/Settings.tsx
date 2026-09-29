@@ -184,7 +184,7 @@ function DataPane() {
   const [impDlg, setImpDlg] = useState<{ path: string; info: ImportInfo; pw: string } | null>(null)
   const [confirmOverwrite, setConfirmOverwrite] = useState<{ path: string; pw: string } | null>(null)
 
-  const refresh = useCallback(() => { void api.dataDir().then(setDir); void api.listBackups().then(setBackups) }, [])
+  const refresh = useCallback(() => { void api.dataDir().then(setDir); void api.listBackups().then((b) => setBackups(b ?? [])) }, [])
   useEffect(refresh, [refresh])
   const run = async (f: () => Promise<string | void>) => {
     setErr(''); setMsg('')

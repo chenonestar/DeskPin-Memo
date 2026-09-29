@@ -129,7 +129,7 @@ test.describe('设置窗口', () => {
     await expect(page.getByRole('dialog')).toContainText('明文导出')
     await page.getByLabel('加密导出（单独设置导出密码）').check()
     await expect(page.getByRole('dialog').getByRole('button', { name: '导出' })).toBeDisabled()
-    await page.getByLabel('导出密码').fill('abcdef')
+    await page.getByRole('textbox', { name: '导出密码' }).fill('abcdef')
     await expect(page.getByRole('dialog').getByRole('button', { name: '导出' })).toBeEnabled()
   })
 

@@ -71,6 +71,9 @@ func pruneBackups(dir string, keep int) error {
 // ListBackups 返回备份文件（新→旧）。
 func ListBackups(dir string) []string {
 	files, _ := filepath.Glob(filepath.Join(dir, "*.db"))
+	if files == nil {
+		files = []string{} // JSON 序列化为 [] 而不是 null
+	}
 	sort.Sort(sort.Reverse(sort.StringSlice(files)))
 	return files
 }
