@@ -22,8 +22,8 @@ export function Settings({ settings, groups, onSettings, reloadGroups, onClose }
   const [tab, setTab] = useState<Tab>('general')
   const [conflict, setConflict] = useState<string[]>([])
   const patch = useCallback(async (p: Partial<S>) => {
-    const next = await api.saveSettings({ ...settings, ...p })
-    onSettings(next)
+    onSettings({ ...settings, ...p }) // 乐观更新：控件立即反映，随后以后端规范化后的结果为准
+    onSettings(await api.saveSettings({ ...settings, ...p }))
   }, [settings, onSettings])
 
   useEffect(() => on('hotkey:conflict', (d) => setConflict(d as string[])), [])

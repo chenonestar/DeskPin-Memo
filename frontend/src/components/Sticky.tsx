@@ -341,7 +341,8 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
           <div className="body">
             {view.kind === 'group' ? (
               <>
-                {shown.length === 0 && doneShown.length === 0 ? <div className="empty">{t('emptyList')}</div> : (
+                {shown.length === 0 && doneShown.length === 0 && <div className="empty">{t('emptyList')}</div>}
+                {shown.length > 0 && (
                   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
                     <SortableContext items={shown.map((i) => i.id)} strategy={verticalListSortingStrategy}>
                       <ul className="list" data-testid="todo-list">

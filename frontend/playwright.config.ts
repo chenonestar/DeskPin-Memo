@@ -16,7 +16,7 @@ export default defineConfig({
   webServer: {
     command: 'go run ../cmd/devserver -addr 127.0.0.1:8790 -static dist',
     url: 'http://127.0.0.1:8790',
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
 })
