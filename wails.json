@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "DeskPinMemo",
+  "outputfilename": "DeskPinMemo",
+  "frontend:dir": "frontend",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "frontend/src",
+  "author": { "name": "DeskPin Memo" },
+  "info": {
+    "companyName": "DeskPin Memo",
+    "productName": "桌面备忘钉",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © DeskPin Memo",
+    "comments": "钉在桌面、一眼可见的备忘 / 待办"
+  }
+}
