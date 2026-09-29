@@ -68,6 +68,7 @@ test.describe('便签窗口', () => {
   test('AC-09：删除进入回收站，可恢复且字段完整', async ({ page }) => {
     await freshGroup(page)
     await addViaInput(page, '明天 09:00 报销 #财务 !高')
+    const inTrash = rows(page).filter({ hasText: '报销' }) // 回收站是全局视图，只看本用例的事项
     const row = rows(page).first()
     await expect(row).toHaveClass(/prio-2/)
     await row.click({ button: 'right' })
@@ -78,9 +79,9 @@ test.describe('便签窗口', () => {
     await page.getByTestId('group-name').click()
     await page.getByRole('menuitem', { name: '回收站' }).click()
     await expect(page.getByText('删除的事项保留 30 天后自动清除')).toBeVisible()
-    await expect(rows(page).first()).toContainText('报销')
-    await rows(page).first().getByRole('button', { name: '恢复' }).click()
-    await expect(rows(page)).toHaveCount(0)
+    await expect(inTrash.first()).toContainText('报销')
+    await inTrash.first().getByRole('button', { name: '恢复' }).click()
+    await expect(inTrash).toHaveCount(0)
     // 回到分组：字段完整
     await page.keyboard.press('Escape')
     await expect(rows(page).first()).toContainText('报销')
@@ -91,7 +92,8 @@ test.describe('便签窗口', () => {
 
   test('清空回收站需要二次确认', async ({ page }) => {
     await freshGroup(page)
-    await addViaInput(page, '临时')
+    const tmp = `临时${Date.now()}`
+    await addViaInput(page, tmp)
     await rows(page).first().click({ button: 'right' })
     await page.getByRole('menuitem', { name: '删除' }).click()
     await page.getByTestId('group-name').click()
@@ -99,7 +101,7 @@ test.describe('便签窗口', () => {
     await page.getByRole('button', { name: '清空回收站' }).click()
     await expect(page.getByRole('dialog')).toContainText('清空后无法恢复')
     await page.getByRole('dialog').getByRole('button', { name: '取消' }).click()
-    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).filter({ hasText: tmp })).toHaveCount(1)
     await page.getByRole('button', { name: '清空回收站' }).click()
     await page.getByRole('dialog').getByRole('button', { name: '确定' }).click()
     await expect(rows(page)).toHaveCount(0)
@@ -112,6 +114,7 @@ test.describe('便签窗口', () => {
     await rpc(page, 'CreateItem', { title: '五天后', groupId: g.id, dueAt: now + 5 * 86400000 })
     await rpc(page, 'CreateItem', { title: '逾期的', groupId: g.id, dueAt: now - 3 * 3600000 })
     await page.reload()
+    await expect(rows(page)).toHaveCount(3)
     const titles = await rows(page).locator('.title').allTextContents()
     expect(titles).toEqual(['逾期的', '五天后', '无日期'])
     await expect(rows(page).first()).toHaveClass(/overdue/)
@@ -121,7 +124,8 @@ test.describe('便签窗口', () => {
 
   test('右键菜单：优先级与移动到分组', async ({ page }) => {
     const g = await freshGroup(page)
-    const other = await rpc<{ id: string }>(page, 'CreateGroup', `目标${Date.now()}`, '')
+    const otherName = `目标${Date.now()}`
+    const other = await rpc<{ id: string }>(page, 'CreateGroup', otherName, '')
     await addViaInput(page, '搬家')
     await rows(page).first().click({ button: 'right' })
     await page.getByRole('menuitem', { name: '设置优先级' }).click()
@@ -129,7 +133,7 @@ test.describe('便签窗口', () => {
     await expect(rows(page).first()).toHaveClass(/prio-2/)
     await rows(page).first().click({ button: 'right' })
     await page.getByRole('menuitem', { name: '移动到分组' }).click()
-    await page.locator('.menu .indent .mi').first().click()
+    await page.locator('.menu .indent').getByRole('menuitem', { name: otherName }).click()
     await expect(rows(page)).toHaveCount(0)
     const gv = await rpc<{ todo: { title: string }[] }>(page, 'GroupContent', other.id)
     expect(gv.todo.map((i) => i.title)).toEqual(['搬家'])
@@ -169,27 +173,30 @@ test.describe('便签窗口', () => {
 
   test('FR-404：搜索高亮关键字，包含已完成事项', async ({ page }) => {
     const g = await freshGroup(page)
-    const it = await rpc<{ id: string }>(page, 'CreateItem', { title: '回复 HR 邮件', groupId: g.id })
+    const kw = `邮件${Date.now()}`
+    const it = await rpc<{ id: string }>(page, 'CreateItem', { title: `回复 HR ${kw}`, groupId: g.id })
     await rpc(page, 'CreateItem', { title: '买菜', groupId: g.id })
     await rpc(page, 'Toggle', it.id, true)
     await page.reload()
+    await expect(page.getByTestId('add-input')).toBeVisible()
     await page.keyboard.press('Control+f')
     const input = page.getByTestId('search-input')
     await expect(input).toBeFocused()
-    await input.fill('邮件')
+    await input.fill(kw)
     await expect(rows(page)).toHaveCount(1)
-    await expect(rows(page).first().locator('mark')).toHaveText('邮件')
+    await expect(rows(page).first().locator('mark')).toHaveText(kw)
     await input.fill('')
     await expect(rows(page)).toHaveCount(0)
   })
 
   test('智能视图：今天 / 逾期 / 无日期', async ({ page }) => {
     const g = await freshGroup(page)
-    await rpc(page, 'CreateItem', { title: '孤立事项', groupId: g.id })
+    const title = `孤立事项${Date.now()}`
+    await rpc(page, 'CreateItem', { title, groupId: g.id })
     await page.reload()
     await page.getByTestId('group-name').click()
     await page.getByRole('menuitem', { name: '无日期' }).click()
-    await expect(page.getByTestId('flat-list').getByText('孤立事项')).toBeVisible()
+    await expect(page.getByTestId('flat-list').getByText(title)).toBeVisible()
     await expect(page.getByTestId('group-name')).toContainText('无日期')
   })
 
@@ -226,6 +233,7 @@ test.describe('便签窗口', () => {
     const g = await freshGroup(page)
     for (const t of ['甲', '乙', '丙']) await rpc(page, 'CreateItem', { title: t, groupId: g.id })
     await page.reload()
+    await expect(rows(page)).toHaveCount(3)
     const first = rows(page).nth(0)
     const third = rows(page).nth(2)
     const a = (await third.boundingBox())!
@@ -237,6 +245,7 @@ test.describe('便签窗口', () => {
     await page.mouse.up()
     await expect.poll(async () => (await rows(page).locator('.title').allTextContents()).join('')).toBe('丙甲乙')
     await page.reload()
+    await expect(rows(page)).toHaveCount(3)
     expect((await rows(page).locator('.title').allTextContents()).join('')).toBe('丙甲乙')
   })
 

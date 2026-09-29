@@ -41,6 +41,8 @@ let sse: EventSource | null = null
 function ensureSSE() {
   if (sse || inWails()) return
   sse = new EventSource('/events')
+  // 连接（重连）建立后通知界面重新同步状态：连接建立前发生的事件不会被重放
+  sse.onopen = () => handlers.get('sse:open')?.forEach((h) => h(null))
   sse.onmessage = (m) => {
     try {
       const { event, data } = JSON.parse(m.data)

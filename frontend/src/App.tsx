@@ -24,17 +24,17 @@ export default function App() {
 
   const init = useCallback(async () => {
     try {
-      const b = await api.bootstrap()
+      // 先取齐所有数据再一次性渲染，避免较早发出的请求晚到后覆盖事件带来的较新状态
+      const [b, gid, w, ov] = await Promise.all([api.bootstrap(), api.currentGroup(), api.applyWindow(), api.overlay()])
       setBoot(b); setGroups(b.groups); setSettings(b.settings); setLocked(b.locked)
-      setGroupId(await api.currentGroup())
-      setWin(await api.applyWindow())
-      setOverlay((await api.overlay()) as Overlay)
+      setGroupId(gid); setWin(w); setOverlay(ov as Overlay)
     } catch (e) { setFatal((e as Error).message) }
   }, [])
 
   useEffect(() => { void init() }, [init])
   useEffect(() => on('overlay:open', (k) => setOverlay(k as Overlay)), [])
   useEffect(() => on('overlay:close', () => setOverlay('')), [])
+  useEffect(() => on('sse:open', () => { void api.overlay().then((k) => setOverlay(k as Overlay)) }), [])
   useEffect(() => on('settings:changed', (s) => setSettings(s as SettingsT)), [])
   useEffect(() => on('lock:changed', (l) => { setLocked(!!l); if (!l) void init() }), [init])
   useEffect(() => on('data:changed', reloadGroups), [reloadGroups])

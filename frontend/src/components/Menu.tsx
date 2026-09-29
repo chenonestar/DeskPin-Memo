@@ -41,7 +41,7 @@ export function Menu({ x, y, entries, onClose }: Props) {
       case 'group':
         return (
           <div key={i}>
-            <button className="mi" onClick={() => setOpen(open === e.label ? null : e.label)}>
+            <button className="mi" role="menuitem" aria-expanded={open === e.label} onClick={() => setOpen(open === e.label ? null : e.label)}>
               <span className="ck" />
               {e.label}
               <span className="sub">{open === e.label ? '▾' : '▸'}</span>
@@ -53,6 +53,7 @@ export function Menu({ x, y, entries, onClose }: Props) {
         return (
           <button
             key={i}
+            role="menuitem"
             className={`mi ${e.danger ? 'danger' : ''}`}
             onClick={() => {
               e.onClick?.()
