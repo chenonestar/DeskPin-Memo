@@ -225,3 +225,6 @@ mark { background: rgba(255, 200, 0, 0.55); color: inherit; border-radius: 2px; 
 .subadd:focus { background: var(--card); }
 .rowadd { opacity: 0; width: 20px; height: 20px; }
 .row:hover .rowadd, .rowadd:focus-visible { opacity: 1; }
+
+/* ---------- 鼠标穿透（FR-208）---------- */
+.ctbadge { font-size: 11px; line-height: 16px; padding: 0 6px; border-radius: 8px; background: var(--accent); color: #fff; margin-right: 2px; white-space: nowrap; }

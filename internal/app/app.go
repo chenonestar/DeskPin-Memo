@@ -29,6 +29,7 @@ type App struct {
 	groupID string
 	quick   *quickSaved // 快速输入框 / 设置窗口打开期间保存的便签窗口状态
 	overlay string      // "quick" | "settings" | ""
+	alerts  int         // 尚未处理的强提醒数量（期间需要鼠标交互，暂停鼠标穿透）
 	Version string
 	Emit    func(event string, data any)
 }
@@ -173,7 +174,53 @@ func (a *App) ApplyWindow() (WindowState, error) {
 	}
 	a.shell.SetBounds(r) // 外壳负责把不存在屏幕上的位置拉回主屏（AC-12）
 	_ = a.shell.SetMode(w.Mode)
+	a.applyClickThrough()
 	return WindowState{Window: w, Visible: a.shell.Visible()}, nil
+}
+
+// applyClickThrough 把「是否鼠标穿透」应用到窗口。快速输入框、设置窗口、每日概览和强提醒
+// 打开期间必须能用鼠标操作，所以暂时关闭穿透，结束后按保存的状态恢复。
+func (a *App) applyClickThrough() {
+	w, err := a.svc.GetWindow(a.groupID)
+	if err != nil {
+		return
+	}
+	a.shell.SetClickThrough(w.ClickThrough && a.quick == nil && a.alerts == 0)
+}
+
+// SetClickThrough 开启 / 关闭鼠标穿透（FR-208）并保存。
+func (a *App) SetClickThrough(on bool) (WindowState, error) {
+	w, _ := a.svc.GetWindow(a.groupID)
+	w.ClickThrough = on
+	if _, err := a.svc.SaveWindow(w); err != nil {
+		return WindowState{}, err
+	}
+	a.applyClickThrough()
+	ws, err := a.windowState()
+	if err == nil {
+		a.Emit("window:state", ws)
+	}
+	return ws, err
+}
+
+// ToggleClickThrough 切换鼠标穿透（托盘菜单：开启后窗口不再响应鼠标，需要一个不依赖窗口的入口）。
+func (a *App) ToggleClickThrough() (WindowState, error) {
+	w, _ := a.svc.GetWindow(a.groupID)
+	return a.SetClickThrough(!w.ClickThrough)
+}
+
+// ClickThroughEnabled 返回当前分组便签是否开启了鼠标穿透（托盘菜单勾选状态）。
+func (a *App) ClickThroughEnabled() bool {
+	w, err := a.svc.GetWindow(a.groupID)
+	return err == nil && w.ClickThrough
+}
+
+// StrongAlertDone 前端处理完一条强提醒后调用；全部处理完后恢复鼠标穿透。
+func (a *App) StrongAlertDone() {
+	if a.alerts > 0 {
+		a.alerts--
+	}
+	a.applyClickThrough()
 }
 
 func (a *App) effectiveHeight(w store.Window, sc float64) int {
@@ -322,6 +369,7 @@ func (a *App) openOverlay(kind string, w, h int, topFraction bool) {
 	}
 	a.shell.SetBounds(Rect{X: area.X + (area.W-pw)/2, Y: y, W: pw, H: ph})
 	_ = a.shell.SetMode("top")
+	a.applyClickThrough() // a.quick 已设置 → 暂时关闭穿透
 	a.shell.SetVisible(true)
 	a.shell.Focus()
 }
@@ -335,6 +383,7 @@ func (a *App) closeOverlay() {
 	a.shell.SetBounds(q.bounds)
 	_ = a.shell.SetMode(q.mode)
 	a.shell.SetVisible(q.visible)
+	a.applyClickThrough()
 }
 
 // OpenQuick 唤出快速输入框：窗口临时变为置顶、居中偏上的 560 px 宽输入条（4.2）。
@@ -486,6 +535,8 @@ func (a *App) ShowStrongAlert(n scheduler.Notification) {
 		a.shell.SetVisible(true)
 		_ = a.shell.SetMode("top")
 	}
+	a.alerts++
+	a.applyClickThrough() // 强提醒必须手动处理，期间暂停穿透
 	sound := a.svc.GetSettings().Sound
 	if sound {
 		a.shell.Beep()

@@ -39,6 +39,7 @@ export default function App() {
   useEffect(() => on('overlay:open', (k) => setOverlay(k as Overlay)), [])
   useEffect(() => on('overlay:close', () => setOverlay('')), [])
   useEffect(() => on('sse:open', () => { void api.overlay().then((k) => setOverlay(k as Overlay)) }), [])
+  useEffect(() => on('window:state', (w) => setWin(w as WindowState)), []) // 托盘菜单切换鼠标穿透等
   useEffect(() => on('settings:changed', (s) => setSettings(s as SettingsT)), [])
   useEffect(() => on('lock:changed', (l) => { setLocked(!!l); if (!l) void init() }), [init])
   useEffect(() => on('data:changed', reloadGroups), [reloadGroups])
@@ -76,7 +77,7 @@ export default function App() {
           onOpenSettings={() => void api.openSettings()} />
       )}
       {notice && <div className="banner" role="alert" style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 90, cursor: 'pointer' }} data-testid="datadir-notice" onClick={() => setNotice('')}>{notice}</div>}
-      {alerts.length > 0 && <StrongAlert n={alerts[0]} onHandled={() => setAlerts((a) => a.slice(1))} />}
+      {alerts.length > 0 && <StrongAlert n={alerts[0]} onHandled={() => { setAlerts((a) => a.slice(1)); void api.strongAlertDone() }} />}
     </>
   )
 }

@@ -25,6 +25,12 @@ type Shell struct {
 	dragging atomic.Bool
 	quit     func()
 	loop     *Loop
+
+	// 鼠标穿透（FR-208）
+	ctMu   sync.Mutex
+	ct     bool                     // 功能是否开启（不含按住 Ctrl 的临时恢复）
+	ctOrig map[windows.HWND]uintptr // 修改前的扩展样式，关闭穿透时原样恢复
+	ctrlCh chan struct{}
 }
 
 // ErrPinFallback 表示「钉在桌面」不可用，已降级为「置底窗口」（10.1 风险应对）。
@@ -33,7 +39,15 @@ var ErrPinFallback = errors.New("当前系统不支持嵌入桌面层，已降�
 var _ app.Shell = (*Shell)(nil)
 
 // NewShell 创建外壳；quit 用于退出程序。窗口句柄稍后通过 Attach 绑定。
-func NewShell(quit func()) *Shell { return &Shell{quit: quit, mode: "desktop"} }
+func NewShell(quit func()) *Shell {
+	s := &Shell{quit: quit, mode: "desktop", ctOrig: map[windows.HWND]uintptr{}, ctrlCh: make(chan struct{}, 1)}
+	go func() {
+		for range s.ctrlCh { // 串行处理 Ctrl 状态变化；以实际按键状态为准，不依赖事件顺序
+			s.refreshClickThrough()
+		}
+	}()
+	return s
+}
 
 // SetLoop 关联消息循环（托盘徽标等）。
 func (s *Shell) SetLoop(l *Loop) { s.loop = l }
@@ -461,4 +475,75 @@ func (s *Shell) PickFile(save bool, title, defaultName, pattern string) (string,
 		return "", nil // 用户取消
 	}
 	return windows.UTF16ToString(buf), nil
+}
+
+// ---- 鼠标穿透（FR-208）----
+
+// SetClickThrough 开启 / 关闭鼠标穿透。开启后窗口（含 WebView2 的全部子窗口）带上
+// WS_EX_LAYERED|WS_EX_TRANSPARENT，鼠标点击落到下面的窗口；按住 Ctrl 时临时恢复交互。
+// Ctrl 状态通过后台原始输入（RIDEV_INPUTSINK）事件驱动检测，没有轮询，空闲时不占 CPU（NFR-03）。
+func (s *Shell) SetClickThrough(on bool) {
+	s.ctMu.Lock()
+	s.ct = on
+	s.ctMu.Unlock()
+	if s.loop != nil {
+		s.loop.WatchCtrl(on)
+	}
+	s.refreshClickThrough()
+}
+
+// OnCtrl 由消息循环在 Ctrl 键按下 / 抬起时调用。
+func (s *Shell) OnCtrl() {
+	select {
+	case s.ctrlCh <- struct{}{}:
+	default: // 已有待处理的刷新，合并
+	}
+}
+
+func (s *Shell) refreshClickThrough() {
+	s.ctMu.Lock()
+	want := s.ct
+	s.ctMu.Unlock()
+	s.applyTransparent(want && !keyDown(vkControl))
+}
+
+func (s *Shell) applyTransparent(on bool) {
+	root := s.HWND()
+	if root == 0 {
+		return
+	}
+	targets := []windows.HWND{root}
+	cb := syscall.NewCallback(func(h uintptr, _ uintptr) uintptr {
+		targets = append(targets, windows.HWND(h))
+		return 1
+	})
+	pEnumChildWindows.Call(uintptr(root), cb, 0)
+
+	s.ctMu.Lock()
+	defer s.ctMu.Unlock()
+	for h := range s.ctOrig { // 清理已销毁窗口的记录（句柄可能被复用）
+		if ok, _, _ := pIsWindow.Call(uintptr(h)); ok == 0 {
+			delete(s.ctOrig, h)
+		}
+	}
+	for _, h := range targets {
+		ex := getWindowLong(h, gwlExStyle)
+		if _, seen := s.ctOrig[h]; !seen {
+			s.ctOrig[h] = ex
+		}
+		if on {
+			if ex&wsExTransparent != 0 && ex&wsExLayered != 0 {
+				continue
+			}
+			setWindowLong(h, gwlExStyle, ex|wsExLayered|wsExTransparent)
+			pSetLayeredWindowAttributes.Call(uintptr(h), 0, 255, lwaAlpha) // 完全不透明；没有这一句分层窗口不会显示
+		} else {
+			orig := s.ctOrig[h]
+			if ex == orig {
+				continue
+			}
+			setWindowLong(h, gwlExStyle, orig)
+		}
+		pSetWindowPos.Call(uintptr(h), 0, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoZOrder|swpNoActivate|swpFrameChanged)
+	}
 }

@@ -144,6 +144,7 @@ export interface WindowState {
   locked: boolean
   collapsed: boolean
   color: string
+  clickThrough: boolean
   visible: boolean
 }
 

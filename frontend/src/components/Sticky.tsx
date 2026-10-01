@@ -222,6 +222,11 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
       { kind: 'sep' },
       { kind: 'item', label: win?.locked ? t('unlockPosition') : t('lockPosition'), onClick: async () => setWin(await api.setWindowLocked(!win?.locked)) },
       { kind: 'item', label: t('collapse'), onClick: async () => setWin(await api.toggleCollapse()) },
+      { kind: 'item', label: t('clickThrough'), checked: !!win?.clickThrough, onClick: async () => {
+        const w = await api.setClickThrough(!win?.clickThrough)
+        setWin(w)
+        if (w.clickThrough) show(t('clickThroughOn'), undefined, 9000) // 开启后窗口不再响应鼠标：告知如何恢复
+      } },
       { kind: 'custom', node: (
         <div style={{ padding: '4px 10px' }}>
           <div className="lbl">{t('opacity')} {Math.round(opacity * 100)}%</div>
@@ -334,6 +339,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
           </span>
         )}
         <span className="spacer" />
+        {win?.clickThrough && <span className="ctbadge" title={t('clickThroughBadgeHint')} data-testid="ct-badge">{t('clickThroughBadge')}</span>}
         {win?.locked && <span className="iconbtn" title={t('lockPosition')}><Icon name="lock" /></span>}
         <button className="iconbtn on" title={t(win?.mode === 'top' ? 'modeTop' : win?.mode === 'normal' ? 'modeNormal' : 'modeDesktop')} onClick={modeMenu} aria-label="窗口模式" data-testid="mode-btn"><Icon name={modeIcon} /></button>
         <button className="iconbtn" title={t('search')} onClick={() => { setView({ kind: 'search' }); setTimeout(() => searchRef.current?.focus(), 0) }} aria-label={t('search')}><Icon name="search" /></button>

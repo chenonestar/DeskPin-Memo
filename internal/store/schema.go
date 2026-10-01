@@ -6,7 +6,7 @@ import (
 )
 
 // CurrentSchemaVersion 为数据库结构版本（NFR-11）。
-const CurrentSchemaVersion = 2
+const CurrentSchemaVersion = 3
 
 // 时间一律以 UTC 毫秒时间戳（INTEGER）存储，显示时按本地时区转换。
 // hlc / device_id / field_hlc / deleted 为 V3 同步预留字段，V1 建表即创建并维护。
@@ -123,6 +123,8 @@ CREATE TABLE subtasks (
 CREATE INDEX idx_subtasks_item ON subtasks(item_id);
 CREATE INDEX idx_subtasks_hlc  ON subtasks(hlc);
 `,
+	// v3：便签窗口鼠标穿透（FR-208）。windows 表为设备相关状态，不含同步字段。
+	`ALTER TABLE windows ADD COLUMN click_through INTEGER NOT NULL DEFAULT 0;`,
 }
 
 func migrate(db *sql.DB, backup func() error) error {

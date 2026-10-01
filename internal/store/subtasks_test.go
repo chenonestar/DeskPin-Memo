@@ -306,3 +306,38 @@ func TestMigrateV1ToV2(t *testing.T) {
 		t.Fatalf("备份应是升级前的版本, got %d", ov)
 	}
 }
+
+// v2 → v3：windows 表新增 click_through 列，已有窗口记录保留，默认不穿透。
+func TestMigrateV2ToV3ClickThrough(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.db")
+	raw, _ := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	for i := 0; i < 2; i++ {
+		if _, err := raw.Exec(migrations[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw.Exec(`PRAGMA user_version = 2`)
+	raw.Exec(`INSERT INTO meta(key,value) VALUES('device_id','0190a1b2-c3d4-7000-8000-000000000000')`)
+	raw.Exec(`INSERT INTO groups(id,name,color,sort_order,is_default,hlc,device_id,field_hlc) VALUES('g1','收件箱','',1,1,'1','d','{}')`)
+	raw.Exec(`INSERT INTO windows(id,group_id,mode,x,y,width,height,locked) VALUES('w1','g1','top',10,20,300,420,1)`)
+	raw.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	w, err := s.GetWindowByGroup("g1")
+	if err != nil || w.Mode != "top" || w.X != 10 || !w.Locked || w.ClickThrough {
+		t.Fatalf("升级后已有窗口记录应保留且默认不穿透: %+v %v", w, err)
+	}
+	w.ClickThrough = true
+	s.SaveWindow(w)
+	if got, _ := s.GetWindowByGroup("g1"); !got.ClickThrough {
+		t.Fatal("click_through 应可保存")
+	}
+	if b, _ := filepath.Glob(filepath.Join(dir, "backups", "premigrate-*.db")); len(b) != 1 {
+		t.Fatalf("迁移前应自动备份: %v", b)
+	}
+}

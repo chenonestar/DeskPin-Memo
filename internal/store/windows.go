@@ -5,13 +5,13 @@ import (
 	"errors"
 )
 
-const windowCols = `id,group_id,mode,x,y,width,height,monitor_id,opacity,locked,collapsed,color`
+const windowCols = `id,group_id,mode,x,y,width,height,monitor_id,opacity,locked,collapsed,color,click_through`
 
 func scanWindow(sc interface{ Scan(...any) error }) (Window, error) {
 	var w Window
-	var lk, co int
-	err := sc.Scan(&w.ID, &w.GroupID, &w.Mode, &w.X, &w.Y, &w.Width, &w.Height, &w.MonitorID, &w.Opacity, &lk, &co, &w.Color)
-	w.Locked, w.Collapsed = lk == 1, co == 1
+	var lk, co, ct int
+	err := sc.Scan(&w.ID, &w.GroupID, &w.Mode, &w.X, &w.Y, &w.Width, &w.Height, &w.MonitorID, &w.Opacity, &lk, &co, &w.Color, &ct)
+	w.Locked, w.Collapsed, w.ClickThrough = lk == 1, co == 1, ct == 1
 	return w, err
 }
 
@@ -61,11 +61,11 @@ func (s *Store) SaveWindow(w Window) (Window, error) {
 				w.ID = newID()
 			}
 		}
-		_, err := tx.Exec(`INSERT INTO windows(`+windowCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+		_, err := tx.Exec(`INSERT INTO windows(`+windowCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET group_id=excluded.group_id, mode=excluded.mode, x=excluded.x, y=excluded.y,
 			width=excluded.width, height=excluded.height, monitor_id=excluded.monitor_id, opacity=excluded.opacity,
-			locked=excluded.locked, collapsed=excluded.collapsed, color=excluded.color`,
-			w.ID, w.GroupID, w.Mode, w.X, w.Y, w.Width, w.Height, w.MonitorID, w.Opacity, b2i(w.Locked), b2i(w.Collapsed), w.Color)
+			locked=excluded.locked, collapsed=excluded.collapsed, color=excluded.color, click_through=excluded.click_through`,
+			w.ID, w.GroupID, w.Mode, w.X, w.Y, w.Width, w.Height, w.MonitorID, w.Opacity, b2i(w.Locked), b2i(w.Collapsed), w.Color, b2i(w.ClickThrough))
 		return err
 	})
 	return w, err

@@ -23,10 +23,11 @@ var iconFS embed.FS
 
 // 托盘菜单命令（FR-209）。
 const (
-	CmdNew      = 1
-	CmdToggle   = 2
-	CmdSettings = 3
-	CmdQuit     = 4
+	CmdNew          = 1
+	CmdToggle       = 2
+	CmdSettings     = 3
+	CmdQuit         = 4
+	CmdClickThrough = 5
 )
 
 const (
@@ -34,18 +35,31 @@ const (
 	hotkeyToggle    = 2
 	wmRunOnLoop     = wmUser + 2
 	wmSettingChange = 0x001A
+	wmInput         = 0x00FF
+	ridInput        = 0x10000003
+	ridevRemove     = 0x00000001
+	ridevInputSink  = 0x00000100
 )
+
+type rawInputDevice struct {
+	UsagePage uint16
+	Usage     uint16
+	Flags     uint32
+	Target    windows.HWND
+}
 
 // Callbacks 是消息循环触发的回调，均在独立 goroutine 中调用，不会阻塞消息泵。
 type Callbacks struct {
-	OnQuick      func()
-	OnToggle     func()
-	OnResume     func() // 睡眠唤醒（FR-306）
-	OnTimeChange func() // 系统时间 / 时区改变（NFR-05）
-	OnTaskbar    func() // 资源管理器重启（AC-03）
-	OnDisplay    func() // 显示器配置变化
-	OnMenu       func(cmd int)
-	OnEndSession func()
+	OnQuick        func()
+	OnToggle       func()
+	OnResume       func() // 睡眠唤醒（FR-306）
+	OnTimeChange   func() // 系统时间 / 时区改变（NFR-05）
+	OnTaskbar      func() // 资源管理器重启（AC-03）
+	OnDisplay      func() // 显示器配置变化
+	OnMenu         func(cmd int)
+	OnEndSession   func()
+	OnCtrl         func()      // Ctrl 键按下 / 抬起（仅在鼠标穿透开启期间才会收到）
+	ClickThroughOn func() bool // 托盘菜单勾选状态
 }
 
 // Loop 是隐藏窗口 + 消息循环：热键、托盘、电源、任务栏重建、时间变更都经它接收。
@@ -220,6 +234,32 @@ func (l *Loop) Close() {
 	pPostMessageW.Call(uintptr(l.hwnd), wmDestroy, 0, 0)
 }
 
+// WatchCtrl 开启 / 关闭键盘原始输入监听（RIDEV_INPUTSINK：窗口不在前台也能收到 WM_INPUT）。
+// 关闭鼠标穿透时取消注册，不再有任何额外开销。
+func (l *Loop) WatchCtrl(on bool) {
+	l.do(func() {
+		d := rawInputDevice{UsagePage: 1, Usage: 6} // 通用桌面 / 键盘
+		if on {
+			d.Flags, d.Target = ridevInputSink, l.hwnd
+		} else {
+			d.Flags = ridevRemove
+		}
+		pRegisterRawInputDevices.Call(uintptr(unsafe.Pointer(&d)), 1, unsafe.Sizeof(d))
+	})
+}
+
+// isCtrlRawInput 判断 WM_INPUT 是否为 Ctrl 键事件（x64 布局：RAWINPUTHEADER 24 字节，RAWKEYBOARD.VKey 在偏移 30）。
+func isCtrlRawInput(hRawInput uintptr) bool {
+	var buf [48]byte
+	size := uint32(len(buf))
+	n, _, _ := pGetRawInputData.Call(hRawInput, ridInput, uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)), 24)
+	if int32(n) <= 0 || *(*uint32)(unsafe.Pointer(&buf[0])) != 1 { // RIM_TYPEKEYBOARD
+		return false
+	}
+	vk := *(*uint16)(unsafe.Pointer(&buf[30]))
+	return vk == vkControl || vk == 0xA2 || vk == 0xA3 // VK_CONTROL / VK_LCONTROL / VK_RCONTROL
+}
+
 // ---- 全局热键（FR-501）----
 
 // ParseHotkey 解析 "Ctrl+Alt+N" 形式的快捷键。
@@ -329,6 +369,12 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 			l.modifyTray()
 		}
 		return 0
+	case wmInput:
+		if l.cb.OnCtrl != nil && isCtrlRawInput(lParam) {
+			l.cb.OnCtrl()
+		}
+		r, _, _ := pDefWindowProcW.Call(hwnd, message, wParam, lParam) // RIM_INPUTSINK 要求交给 DefWindowProc 清理
+		return r
 	case wmDisplayChange:
 		safe(l.cb.OnDisplay)
 		return 0
@@ -346,7 +392,7 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case wmCommand:
-		if cmd := int(wParam & 0xFFFF); cmd >= CmdNew && cmd <= CmdQuit && l.cb.OnMenu != nil {
+		if cmd := int(wParam & 0xFFFF); cmd >= CmdNew && cmd <= CmdClickThrough && l.cb.OnMenu != nil {
 			c := cmd
 			go l.cb.OnMenu(c)
 		}
@@ -373,6 +419,11 @@ func (l *Loop) showMenu() {
 	}
 	add(CmdNew, "新建事项\tCtrl+Alt+N")
 	add(CmdToggle, "显示/隐藏全部便签\tCtrl+Alt+M")
+	ctFlag := uintptr(mfString)
+	if l.cb.ClickThroughOn != nil && l.cb.ClickThroughOn() {
+		ctFlag |= mfChecked
+	}
+	pAppendMenuW.Call(m, ctFlag, CmdClickThrough, uintptr(unsafe.Pointer(utf16("鼠标穿透（按住 Ctrl 临时操作）"))))
 	add(CmdSettings, "设置")
 	pAppendMenuW.Call(m, mfSeparator, 0, 0)
 	add(CmdQuit, "退出")

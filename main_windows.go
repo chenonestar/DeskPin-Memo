@@ -147,14 +147,16 @@ func (d *daemon) init(ctx context.Context) {
 	d.applySettings(settings)
 
 	loop, err := winsys.StartLoop(winsys.Callbacks{
-		OnQuick:      d.app.OpenQuick,
-		OnToggle:     func() { d.app.ToggleVisible() },
-		OnResume:     func() { log.Print("系统唤醒：重新计算提醒"); d.sched.Kick(); sh.Repin() },
-		OnTimeChange: func() { log.Print("系统时间变更：重新计算提醒"); d.sched.Kick() },
-		OnTaskbar:    func() { log.Print("资源管理器重启：重新钉在桌面"); sh.Repin() },
-		OnDisplay:    func() { sh.SetBounds(sh.Bounds()) },
-		OnMenu:       d.menu,
-		OnEndSession: func() { d.app.Quit() },
+		OnQuick:        d.app.OpenQuick,
+		OnToggle:       func() { d.app.ToggleVisible() },
+		OnResume:       func() { log.Print("系统唤醒：重新计算提醒"); d.sched.Kick(); sh.Repin() },
+		OnTimeChange:   func() { log.Print("系统时间变更：重新计算提醒"); d.sched.Kick() },
+		OnTaskbar:      func() { log.Print("资源管理器重启：重新钉在桌面"); sh.Repin() },
+		OnDisplay:      func() { sh.SetBounds(sh.Bounds()) },
+		OnMenu:         d.menu,
+		OnEndSession:   func() { d.app.Quit() },
+		OnCtrl:         sh.OnCtrl,
+		ClickThroughOn: d.app.ClickThroughEnabled,
 	}, d.dataDir)
 	if err != nil {
 		log.Printf("启动消息循环失败: %v", err)
@@ -224,6 +226,8 @@ func (d *daemon) menu(cmd int) {
 		d.app.OpenQuick()
 	case winsys.CmdToggle:
 		d.app.ToggleVisible()
+	case winsys.CmdClickThrough:
+		_, _ = d.app.ToggleClickThrough()
 	case winsys.CmdSettings:
 		d.app.OpenSettings()
 	case winsys.CmdQuit:

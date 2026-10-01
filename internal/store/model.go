@@ -126,6 +126,8 @@ type Window struct {
 	Locked    bool    `json:"locked"`
 	Collapsed bool    `json:"collapsed"`
 	Color     string  `json:"color"`
+	// ClickThrough 开启后便签只显示、不响应鼠标（FR-208）；按住 Ctrl 临时恢复交互。
+	ClickThrough bool `json:"clickThrough"`
 }
 
 // Filter 用于列出事项。

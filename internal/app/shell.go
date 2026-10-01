@@ -19,6 +19,8 @@ type Shell interface {
 	// BeginDrag / BeginResize 由前端标题栏 / 缩放柄触发，直到鼠标释放；onEnd 用于保存位置。
 	BeginDrag(onEnd func())
 	BeginResize(minW, minH, maxW, maxH int, onEnd func())
+	// SetClickThrough 让窗口对鼠标透明（FR-208）；on 为 true 时按住 Ctrl 会临时恢复交互。
+	SetClickThrough(on bool)
 	SetVisible(v bool)
 	Visible() bool
 	Focus()
@@ -38,11 +40,12 @@ type Shell interface {
 
 // NopShell 是无操作实现（开发服务器、单元测试）。
 type NopShell struct {
-	R         Rect
-	Mode      string
-	Hidden    bool
-	Overdue   int
-	Restarted bool
+	R            Rect
+	Mode         string
+	Hidden       bool
+	Overdue      int
+	Restarted    bool
+	ClickThrough bool
 }
 
 func (n *NopShell) SetMode(m string) error                                { n.Mode = m; return nil }
@@ -56,6 +59,7 @@ func (n *NopShell) Visible() bool                                         { retu
 func (n *NopShell) Focus()                                                {}
 func (n *NopShell) CursorMonitorArea() Rect                               { return Rect{0, 0, 1920, 1040} }
 func (n *NopShell) PickFile(bool, string, string, string) (string, error) { return "", nil }
+func (n *NopShell) SetClickThrough(on bool)                               { n.ClickThrough = on }
 func (n *NopShell) PickFolder(string) (string, error)                     { return "", nil }
 func (n *NopShell) Restart() error                                        { n.Restarted = true; return nil }
 func (n *NopShell) OpenPath(string) error                                 { return nil }
