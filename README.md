@@ -52,7 +52,7 @@ go run ./cmd/devserver -seed       # http://127.0.0.1:8787
 需要 Windows、Go 1.26、Node 22、[Wails v2](https://wails.io)、NSIS：
 
 ```bash
-wails build -clean -platform windows/amd64 -ldflags "-s -w -X main.version=1.0.0"
+wails build -clean -skipbindings -platform windows/amd64 -ldflags "-s -w -X main.version=1.0.0"
 makensis /DVERSION=1.0.0 installer/deskpin.nsi     # 安装版（免管理员，装到 %LOCALAPPDATA%\Programs）
 # 绿色版：DeskPinMemo.exe + 空文件 portable.flag（数据放 .\data）
 ```

@@ -51,7 +51,7 @@ jobs:
         shell: bash
         run: |
           VERSION="1.0.0"
-          wails build -clean -platform windows/amd64 -ldflags "-s -w -X main.version=${VERSION}"
+          wails build -clean -skipbindings -platform windows/amd64 -ldflags "-s -w -X main.version=${VERSION}"
           "/c/Program Files (x86)/NSIS/makensis.exe" -DVERSION=${VERSION} installer/deskpin.nsi
           mkdir -p build/portable
           cp build/bin/DeskPinMemo.exe build/portable/

@@ -4,3 +4,5 @@ frontend/test-results/
 frontend/playwright-report/
 build/bin/
 *.exe
+frontend/wailsjs/
+frontend/src/wailsjs/
