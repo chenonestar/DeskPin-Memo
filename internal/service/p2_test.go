@@ -261,3 +261,118 @@ func TestRestoreDefaultDataDir(t *testing.T) {
 		t.Fatal("数据应已复制回默认目录")
 	}
 }
+
+// ---- FR-108 子任务 ----
+
+func TestSubtaskProgressInViews(t *testing.T) {
+	e := setup(t, time.Now())
+	inbox, _ := e.st.InboxID()
+	it, _ := e.svc.CreateItem(store.NewItem{Title: "搬家"})
+	a, _ := e.svc.AddSubtask(it.ID, "打包")
+	e.svc.AddSubtask(it.ID, "叫车")
+	e.svc.AddSubtask(it.ID, "退租")
+	e.svc.ToggleSubtask(a.ID, true)
+	gv, _ := e.svc.GroupContent(inbox)
+	if gv.Todo[0].SubDone != 1 || gv.Todo[0].SubTotal != 3 || len(gv.Todo[0].Subtasks) != 3 {
+		t.Fatalf("进度应为 1/3: %+v", gv.Todo[0])
+	}
+	// 不自动联动：全部子任务完成后父事项仍是未完成
+	for _, sub := range gv.Todo[0].Subtasks {
+		e.svc.ToggleSubtask(sub.ID, true)
+	}
+	if got, _ := e.st.GetItem(it.ID); got.Status != store.StatusTodo {
+		t.Fatal("子任务全部完成不应自动完成父事项")
+	}
+	// 完成父事项也不改动子任务
+	e.svc.Toggle(it.ID, true)
+	got, _ := e.st.GetItem(it.ID)
+	if got.Status != store.StatusDone || len(got.Subtasks) != 3 {
+		t.Fatalf("%+v", got)
+	}
+	// 智能视图 / 搜索结果也带进度
+	vs, _ := e.svc.SmartView("done")
+	if len(vs) != 1 || vs[0].SubTotal != 3 {
+		t.Fatalf("%+v", vs)
+	}
+}
+
+func TestSubtaskUndo(t *testing.T) {
+	e := setup(t, time.Now())
+	it, _ := e.svc.CreateItem(store.NewItem{Title: "x"})
+	sub, _ := e.svc.AddSubtask(it.ID, "a")
+	count := func() int { g, _ := e.st.GetItem(it.ID); return len(g.Subtasks) }
+
+	e.svc.RenameSubtask(sub.ID, "改名了")
+	if l, _ := e.svc.Undo(); l != "修改子任务" {
+		t.Fatal(l)
+	}
+	if s, _ := e.st.GetSubtask(sub.ID); s.Title != "a" {
+		t.Fatal("撤销改名")
+	}
+	e.svc.ToggleSubtask(sub.ID, true)
+	e.svc.Undo()
+	if s, _ := e.st.GetSubtask(sub.ID); s.Done {
+		t.Fatal("撤销勾选")
+	}
+	e.svc.DeleteSubtask(sub.ID)
+	if count() != 0 {
+		t.Fatal()
+	}
+	e.svc.Undo()
+	if count() != 1 {
+		t.Fatal("撤销删除")
+	}
+	b, _ := e.svc.AddSubtask(it.ID, "b")
+	e.svc.ReorderSubtasks(it.ID, []string{b.ID, sub.ID})
+	g, _ := e.st.GetItem(it.ID)
+	if g.Subtasks[0].ID != b.ID {
+		t.Fatal("重排")
+	}
+	e.svc.Undo()
+	g, _ = e.st.GetItem(it.ID)
+	if g.Subtasks[0].ID != sub.ID {
+		t.Fatal("撤销重排")
+	}
+	e.svc.Undo() // 撤销「添加 b」
+	if count() != 1 {
+		t.Fatal("撤销添加")
+	}
+}
+
+func TestRecurringCopiesSubtasksReset(t *testing.T) {
+	fri := time.Date(2026, 10, 2, 9, 0, 0, 0, cst)
+	e := setup(t, fri.Add(-time.Hour))
+	v, _ := e.svc.QuickCreate("每个工作日 09:00 站会准备", "")
+	s1, _ := e.svc.AddSubtask(v.ID, "看板更新")
+	e.svc.AddSubtask(v.ID, "同步风险")
+	e.svc.ToggleSubtask(s1.ID, true)
+
+	*e.now = fri.Add(6 * time.Hour)
+	e.svc.Toggle(v.ID, true)
+	items, _ := e.st.ListItems(store.Filter{Status: store.StatusTodo})
+	if len(items) != 1 {
+		t.Fatalf("应生成下一次: %d", len(items))
+	}
+	next := items[0]
+	if len(next.Subtasks) != 2 || next.Subtasks[0].Title != "看板更新" || next.Subtasks[1].Title != "同步风险" {
+		t.Fatalf("下一次应带上子任务: %+v", next.Subtasks)
+	}
+	for _, sub := range next.Subtasks {
+		if sub.Done {
+			t.Fatal("下一次的子任务应重置为未完成")
+		}
+	}
+	// 原事项的子任务状态不受影响
+	old, _ := e.st.GetItem(v.ID)
+	if !old.Subtasks[0].Done {
+		t.Fatal("已完成实例保留原状态")
+	}
+	// 确定性 id：撤销后重新完成，子任务 id 不变
+	ids := []string{next.Subtasks[0].ID, next.Subtasks[1].ID}
+	e.svc.Undo()
+	e.svc.Toggle(v.ID, true)
+	items, _ = e.st.ListItems(store.Filter{Status: store.StatusTodo})
+	if items[0].Subtasks[0].ID != ids[0] || items[0].Subtasks[1].ID != ids[1] {
+		t.Fatal("下一次实例的子任务 id 应确定性生成")
+	}
+}

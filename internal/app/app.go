@@ -74,6 +74,23 @@ func (a *App) Toggle(id string, done bool) (service.ItemView, error) { return a.
 func (a *App) SetReminders(id string, ins []store.ReminderInput) (service.ItemView, error) {
 	return a.svc.SetReminders(id, ins)
 }
+
+// ---- 子任务（FR-108）----
+
+func (a *App) AddSubtask(itemID, title string) (store.Subtask, error) {
+	return a.svc.AddSubtask(itemID, title)
+}
+func (a *App) ToggleSubtask(id string, done bool) (store.Subtask, error) {
+	return a.svc.ToggleSubtask(id, done)
+}
+func (a *App) RenameSubtask(id, title string) (store.Subtask, error) {
+	return a.svc.RenameSubtask(id, title)
+}
+func (a *App) DeleteSubtask(id string) error { return a.svc.DeleteSubtask(id) }
+func (a *App) ReorderSubtasks(itemID string, orderedIDs []string) error {
+	return a.svc.ReorderSubtasks(itemID, orderedIDs)
+}
+
 func (a *App) BuildRepeat(kind string, arg int) (string, error) { return a.svc.BuildRepeat(kind, arg) }
 func (a *App) QuickParse(text, groupID string) (service.QuickPreview, error) {
 	return a.svc.QuickParse(text, groupID)

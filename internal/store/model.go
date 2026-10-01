@@ -52,7 +52,27 @@ type Item struct {
 	FieldHLC    string     `json:"fieldHlc"`
 	Tags        []string   `json:"tags"`
 	Reminders   []Reminder `json:"reminders"`
+	Subtasks    []Subtask  `json:"subtasks"`
 	Locked      bool       `json:"locked"` // 加密未解锁，标题/备注不可读
+}
+
+// Subtask 是事项下挂的一层检查项（FR-108）。
+type Subtask struct {
+	ID          string  `json:"id"`
+	ItemID      string  `json:"itemId"`
+	Title       string  `json:"title"`
+	Done        bool    `json:"done"`
+	SortOrder   float64 `json:"sortOrder"`
+	CompletedAt *int64  `json:"completedAt"`
+	CreatedAt   int64   `json:"createdAt"`
+	Locked      bool    `json:"locked"`
+}
+
+// NewSubtask 是新建子任务的输入；ID 非空时使用指定 id（周期事项的确定性 id）。
+type NewSubtask struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Done  bool   `json:"done"`
 }
 
 // NewItem 是新建事项的输入。
@@ -64,6 +84,7 @@ type NewItem struct {
 	DueAt     *int64          `json:"dueAt"`
 	Tags      []string        `json:"tags"`
 	Reminders []ReminderInput `json:"reminders"`
+	Subtasks  []NewSubtask    `json:"subtasks"`
 	SeriesID  string          `json:"seriesId"`
 	// ID 非空时使用指定 id（周期事项的确定性 id）。
 	ID string `json:"id"`

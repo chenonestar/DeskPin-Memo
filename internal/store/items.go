@@ -28,6 +28,7 @@ func scanItem(sc interface{ Scan(...any) error }) (Item, error) {
 	it.DueAt, it.CompletedAt, it.DeletedAt = ni(due), ni(comp), ni(del)
 	it.Tags = []string{}
 	it.Reminders = []Reminder{}
+	it.Subtasks = []Subtask{}
 	return it, nil
 }
 
@@ -85,11 +86,11 @@ func (s *Store) decorate(q execer, items []Item) error {
 	if err != nil {
 		return err
 	}
-	defer rrows.Close()
 	for rrows.Next() {
 		var r Reminder
 		var at, sn, lf sql.NullInt64
 		if err := rrows.Scan(&r.ID, &r.ItemID, &at, &r.OffsetMinutes, &r.RepeatRule, &sn, &lf); err != nil {
+			rrows.Close()
 			return err
 		}
 		r.RemindAt, r.SnoozeUntil, r.LastFiredAt = ni(at), ni(sn), ni(lf)
@@ -97,7 +98,11 @@ func (s *Store) decorate(q execer, items []Item) error {
 			items[i].Reminders = append(items[i].Reminders, r)
 		}
 	}
-	return rrows.Err()
+	if err := rrows.Err(); err != nil {
+		return err
+	}
+	rrows.Close()
+	return s.loadSubtasks(q, items, idx)
 }
 
 func (s *Store) tagNames(q execer) (map[string]string, error) {
@@ -193,6 +198,11 @@ func (s *Store) CreateItem(in NewItem) (Item, error) {
 		}
 		if err := s.setReminders(tx, id, in.DueAt, in.Reminders); err != nil {
 			return err
+		}
+		for i, ns := range in.Subtasks {
+			if _, err := s.addSubtask(tx, id, ns, float64(i+1)); err != nil {
+				return err
+			}
 		}
 		out, err = getItem(s, tx, id)
 		return err
@@ -396,7 +406,7 @@ func (s *Store) purge(where string, args ...any) (int, error) {
 		rows.Close()
 		for _, id := range ids {
 			for _, q := range []string{
-				`DELETE FROM reminders WHERE item_id=?`, `DELETE FROM item_tags WHERE item_id=?`,
+				`DELETE FROM subtasks WHERE item_id=?`, `DELETE FROM reminders WHERE item_id=?`, `DELETE FROM item_tags WHERE item_id=?`,
 				`DELETE FROM items_fts WHERE item_id=?`, `DELETE FROM items WHERE id=?`} {
 				if _, err := tx.Exec(q, id); err != nil {
 					return err

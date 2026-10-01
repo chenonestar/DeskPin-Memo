@@ -138,6 +138,8 @@ type ItemView struct {
 	RepeatText string `json:"repeatText"`
 	HasAlarm   bool   `json:"hasAlarm"`
 	GroupName  string `json:"groupName,omitempty"`
+	SubDone    int    `json:"subDone"`  // 已完成的子任务数（FR-108：显示 x/y）
+	SubTotal   int    `json:"subTotal"` // 子任务总数
 }
 
 func (s *Service) views(items []store.Item) []ItemView {
@@ -146,6 +148,12 @@ func (s *Service) views(items []store.Item) []ItemView {
 	for _, it := range items {
 		v := ItemView{Item: it, Rank: store.Rank(it, now, loc)}
 		v.Overdue = v.Rank == 0
+		v.SubTotal = len(it.Subtasks)
+		for _, sub := range it.Subtasks {
+			if sub.Done {
+				v.SubDone++
+			}
+		}
 		for _, r := range it.Reminders {
 			if r.RepeatRule != "" && v.RepeatText == "" {
 				v.RepeatText = recur.Describe(r.RepeatRule)
@@ -541,6 +549,11 @@ func (s *Service) spawnNext(it store.Item) (string, error) {
 	delta := nms - base.UnixMilli()
 	in := store.NewItem{ID: nid, Title: it.Title, Note: it.Note, GroupID: it.GroupID, Priority: &it.Priority,
 		DueAt: &nms, Tags: it.Tags, SeriesID: series}
+	// 子任务一并带到下一次，并重置为未完成；id 同样确定性生成，多设备各自生成会合并为同一条
+	for i, sub := range it.Subtasks {
+		sid := uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("%s/sub/%d", nid, i))).String()
+		in.Subtasks = append(in.Subtasks, store.NewSubtask{ID: sid, Title: sub.Title})
+	}
 	for _, r := range it.Reminders {
 		ri := store.ReminderInput{OffsetMinutes: r.OffsetMinutes, RepeatRule: r.RepeatRule}
 		if r.OffsetMinutes == 0 && r.RemindAt != nil {

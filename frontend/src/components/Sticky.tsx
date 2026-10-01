@@ -6,7 +6,7 @@ import type { Group, Item, Settings, WindowState, WinMode } from '../types'
 import { t } from '../i18n/zh-CN'
 import { useDataVersion, useDebounced, useSnack } from '../hooks'
 import { Icon } from './Icon'
-import { ItemRow } from './ItemRow'
+import { ItemRow, type SubApi } from './ItemRow'
 import { Menu, type MenuEntry } from './Menu'
 import { ItemDialog } from './ItemDialog'
 import { ConfirmDialog, PromptDialog } from './Dialog'
@@ -44,6 +44,8 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
   const [showDone, setShowDone] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set()) // 展开了子任务面板的事项
+  const [focusSubId, setFocusSubId] = useState<string | null>(null)
   const [dialogItem, setDialogItem] = useState<Item | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; entries: MenuEntry[] } | null>(null)
   const [prompt, setPrompt] = useState<{ title: string; label?: string; initial?: string; onOk: (v: string) => void } | null>(null)
@@ -256,6 +258,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
     ] : [
       { kind: 'item', label: t('edit'), onClick: () => setEditingId(item.id) },
       { kind: 'item', label: t('setReminder'), onClick: () => setDialogItem(item) },
+      { kind: 'item', label: t('addSubtask'), onClick: () => { setExpanded((c) => new Set(c).add(item.id)); setFocusSubId(item.id) } },
       { kind: 'group', label: t('moveToGroup'), children: others.map((g): MenuEntry => ({ kind: 'item', label: g.name, onClick: () => void api.updateItem(item.id, { groupId: g.id }) })) },
       { kind: 'group', label: t('setPriority'), children: [prio(2, t('priorityHigh')), prio(1, t('priorityMid')), prio(0, t('priorityLow'))] },
       { kind: 'sep' },
@@ -284,7 +287,20 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
     return [...todo, ...extra]
   }, [todo, done, lingering])
   const doneShown = done.filter((i) => !lingering.has(i.id))
+  const subApi = (item: Item): SubApi => ({
+    expanded: expanded.has(item.id),
+    focusAdd: focusSubId === item.id,
+    onToggleExpand: () => {
+      setExpanded((cur) => { const n = new Set(cur); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n })
+      setFocusSubId(expanded.has(item.id) ? null : item.id) // 展开时聚焦「添加子任务」输入框
+    },
+    onAdd: async (title) => { await api.addSubtask(item.id, title) },
+    onToggle: (sub, done) => void api.toggleSubtask(sub.id, done),
+    onRename: (sub, title) => void api.renameSubtask(sub.id, title).catch((e: Error) => setError(e.message)),
+    onDelete: (sub) => { void api.deleteSubtask(sub.id); show(t('deleteSubtask'), () => void undo()) },
+  })
   const rowProps = (item: Item) => ({
+    sub: subApi(item),
     item, editing: editingId === item.id, lingering: lingering.has(item.id), selected: selectedId === item.id, onSelect: (i: Item) => setSelectedId(i.id),
     onToggle: toggle, onStartEdit: (i: Item) => setEditingId(i.id), onCommitEdit: commitEdit,
     onCancelEdit: () => setEditingId(null), onContext: itemMenu,

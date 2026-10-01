@@ -3,7 +3,7 @@
 // - 在浏览器开发/测试中：改用 Go 开发服务器的 /rpc 与 /events（SSE）。
 import type {
   Bootstrap, DataDirChange, DataDirStatus, DirInfo, Overview, EncStatus, Group, GroupView, ImportInfo, ImportStats, Item, ItemPatch, NewItem,
-  Notification, QuickPreview, ReminderInput, Settings, WindowState, WinMode,
+  Notification, QuickPreview, ReminderInput, Settings, Subtask, WindowState, WinMode,
 } from './types'
 
 type Fn = (...args: unknown[]) => Promise<unknown>
@@ -83,6 +83,11 @@ export const api = {
   buildRepeat: (kind: string, arg: number) => call<string>('BuildRepeat', kind, arg),
   quickParse: (text: string, groupId: string) => call<QuickPreview>('QuickParse', text, groupId),
   quickCreate: (text: string, groupId: string) => call<Item>('QuickCreate', text, groupId),
+  addSubtask: (itemId: string, title: string) => call<Subtask>('AddSubtask', itemId, title),
+  toggleSubtask: (id: string, done: boolean) => call<Subtask>('ToggleSubtask', id, done),
+  renameSubtask: (id: string, title: string) => call<Subtask>('RenameSubtask', id, title),
+  deleteSubtask: (id: string) => call<void>('DeleteSubtask', id),
+  reorderSubtasks: (itemId: string, ids: string[]) => call<void>('ReorderSubtasks', itemId, ids),
   handleAction: (itemId: string, action: string) => call<void>('HandleAction', itemId, action),
 
   groups: () => call<Group[]>('Groups'),

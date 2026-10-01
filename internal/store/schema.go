@@ -6,7 +6,7 @@ import (
 )
 
 // CurrentSchemaVersion 为数据库结构版本（NFR-11）。
-const CurrentSchemaVersion = 1
+const CurrentSchemaVersion = 2
 
 // 时间一律以 UTC 毫秒时间戳（INTEGER）存储，显示时按本地时区转换。
 // hlc / device_id / field_hlc / deleted 为 V3 同步预留字段，V1 建表即创建并维护。
@@ -104,6 +104,24 @@ CREATE TABLE windows (
 );
 -- 全文索引：trigram 分词器支持中文子串检索；由 Go 代码维护（加密开启时停用，避免明文入索引）
 CREATE VIRTUAL TABLE items_fts USING fts5(item_id UNINDEXED, title, note, tokenize='trigram');
+`,
+	// v2：子任务（FR-108）。同步预留字段与其他业务表一致。
+	`
+CREATE TABLE subtasks (
+  id           TEXT PRIMARY KEY,
+  item_id      TEXT NOT NULL REFERENCES items(id),
+  title        TEXT NOT NULL,
+  done         INTEGER NOT NULL DEFAULT 0,
+  sort_order   REAL NOT NULL DEFAULT 0,
+  completed_at INTEGER,
+  created_at   INTEGER NOT NULL,
+  hlc          TEXT NOT NULL,
+  device_id    TEXT NOT NULL,
+  field_hlc    TEXT NOT NULL DEFAULT '{}',
+  deleted      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_subtasks_item ON subtasks(item_id);
+CREATE INDEX idx_subtasks_hlc  ON subtasks(hlc);
 `,
 }
 

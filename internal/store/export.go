@@ -16,7 +16,7 @@ import (
 const ExportFormatVersion = 1
 
 // syncTables 是导出/导入涉及的表（windows 为设备相关，不导出）。
-var exportTables = []string{"groups", "items", "reminders", "tags", "item_tags"}
+var exportTables = []string{"groups", "items", "reminders", "subtasks", "tags", "item_tags"}
 
 // Dump 是导出 JSON 的顶层结构：format_version、exported_at 与全部表数据。
 type Dump struct {
@@ -61,6 +61,8 @@ var sensitive = map[string][]string{
 	"items":  {"title", "note"},
 	"groups": {"name"},
 	"tags":   {"name"},
+	// 子任务标题同样是用户内容：加密开启时随其他字段一起加密
+	"subtasks": {"title"},
 }
 
 // Export 生成完整数据快照（敏感字段为明文；加密导出由上层用导出密码封装）。
@@ -109,6 +111,7 @@ type ImportStats struct {
 	Groups    int `json:"groups"`
 	Reminders int `json:"reminders"`
 	Tags      int `json:"tags"`
+	Subtasks  int `json:"subtasks"`
 	Skipped   int `json:"skipped"`
 }
 
@@ -140,7 +143,7 @@ func (s *Store) Import(d *Dump, mode ImportMode) (ImportStats, error) {
 	}
 	err := s.Tx(func(tx *sql.Tx) error {
 		if mode == ImportOverwrite {
-			for _, q := range []string{`DELETE FROM item_tags`, `DELETE FROM reminders`, `DELETE FROM items`,
+			for _, q := range []string{`DELETE FROM item_tags`, `DELETE FROM subtasks`, `DELETE FROM reminders`, `DELETE FROM items`,
 				`DELETE FROM tags`, `DELETE FROM windows`, `DELETE FROM groups`, `DELETE FROM items_fts`} {
 				if _, err := tx.Exec(q); err != nil {
 					return err
@@ -169,6 +172,14 @@ func (s *Store) Import(d *Dump, mode ImportMode) (ImportStats, error) {
 				if t == "items" {
 					if m, ok := remap[str(r["group_id"])]; ok {
 						r["group_id"] = m
+					}
+				}
+				if t == "subtasks" { // 父事项不存在（例如导出文件不完整）则跳过，避免外键错误
+					var n int
+					_ = tx.QueryRow(`SELECT COUNT(*) FROM items WHERE id=?`, str(r["item_id"])).Scan(&n)
+					if n == 0 {
+						st.Skipped++
+						continue
 					}
 				}
 				if mode == ImportMerge {
@@ -202,6 +213,8 @@ func (s *Store) Import(d *Dump, mode ImportMode) (ImportStats, error) {
 					st.Reminders++
 				case "tags":
 					st.Tags++
+				case "subtasks":
+					st.Subtasks++
 				}
 				if h := str(r["hlc"]); h != "" {
 					s.clock.Observe(h)
@@ -316,6 +329,13 @@ func (s *Store) Markdown(loc *time.Location) (string, error) {
 				line += " #" + t
 			}
 			b.WriteString(line + "\n")
+			for _, sub := range it.Subtasks {
+				sbox := "[ ]"
+				if sub.Done {
+					sbox = "[x]"
+				}
+				b.WriteString("  - " + sbox + " " + sub.Title + "\n")
+			}
 			if strings.TrimSpace(it.Note) != "" {
 				for _, l := range strings.Split(strings.TrimSpace(it.Note), "\n") {
 					b.WriteString("  > " + l + "\n")

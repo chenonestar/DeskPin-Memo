@@ -18,6 +18,17 @@ export interface ReminderInput {
 
 export type Status = 'todo' | 'done' | 'deleted'
 
+export interface Subtask {
+  id: string
+  itemId: string
+  title: string
+  done: boolean
+  sortOrder: number
+  completedAt: number | null
+  createdAt: number
+  locked: boolean
+}
+
 export interface Item {
   id: string
   title: string
@@ -32,6 +43,9 @@ export interface Item {
   seriesId: string
   tags: string[]
   reminders: Reminder[]
+  subtasks: Subtask[]
+  subDone: number
+  subTotal: number
   locked: boolean
   overdue: boolean
   rank: number
