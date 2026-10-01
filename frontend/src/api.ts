@@ -2,7 +2,7 @@
 // - 在 Wails 中：调用 window.go.app.App.*（由 Wails 注入），事件走 window.runtime.EventsOn。
 // - 在浏览器开发/测试中：改用 Go 开发服务器的 /rpc 与 /events（SSE）。
 import type {
-  Bootstrap, EncStatus, Group, GroupView, ImportInfo, ImportStats, Item, ItemPatch, NewItem,
+  Bootstrap, DataDirChange, DataDirStatus, DirInfo, Overview, EncStatus, Group, GroupView, ImportInfo, ImportStats, Item, ItemPatch, NewItem,
   Notification, QuickPreview, ReminderInput, Settings, WindowState, WinMode,
 } from './types'
 
@@ -110,8 +110,17 @@ export const api = {
   openSettings: () => call<void>('OpenSettings'),
   closeSettings: () => call<void>('CloseSettings'),
   overlay: () => call<string>('Overlay'),
+  overview: () => call<Overview>('Overview'),
+  openOverview: () => call<void>('OpenOverview'),
+  closeOverview: () => call<void>('CloseOverview'),
+  maybeShowOverview: () => call<boolean>('MaybeShowOverview'),
 
   dataDir: () => call<string>('DataDir'),
+  dataDirStatus: () => call<DataDirStatus>('DataDirStatus'),
+  inspectDataDir: (p: string) => call<DirInfo>('InspectDataDir', p),
+  pickDataDir: () => call<string>('PickDataDir'),
+  changeDataDir: (target: string, mode: string) => call<DataDirChange>('ChangeDataDir', target, mode),
+  restartApp: () => call<void>('RestartApp'),
   openDataDir: () => call<void>('OpenDataDir'),
   backupNow: () => call<string>('BackupNow'),
   listBackups: () => call<string[]>('ListBackups'),

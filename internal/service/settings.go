@@ -30,9 +30,10 @@ func DefaultSettings() Settings {
 	return Settings{
 		Autostart: true, Language: "zh-CN", Theme: "system", FontSize: 14, Opacity: 1,
 		StickyColor: "#FFF3B0", DefaultRemindTime: "09:00", Sound: true,
-		DND:          scheduler.DND{Enabled: false, Start: "22:00", End: "08:00"},
-		HotkeyQuick:  "Ctrl+Alt+N",
-		HotkeyToggle: "Ctrl+Alt+M",
+		DND:           scheduler.DND{Enabled: false, Start: "22:00", End: "08:00"},
+		HotkeyQuick:   "Ctrl+Alt+N",
+		HotkeyToggle:  "Ctrl+Alt+M",
+		DailyOverview: true, // FR-308：每天首次开机弹出今日事项汇总（可关闭）
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"deskpinmemo/internal/datadir"
 	"deskpinmemo/internal/scheduler"
 	"deskpinmemo/internal/service"
 	"deskpinmemo/internal/store"
@@ -285,6 +286,7 @@ func (a *App) ToggleVisible() bool {
 // 记住当前位置/模式，变成置顶的目标尺寸，关闭后原样恢复。
 const (
 	SettingsW, SettingsH = 720, 540
+	OverviewW, OverviewH = 380, 480
 )
 
 func (a *App) openOverlay(kind string, w, h int, topFraction bool) {
@@ -340,6 +342,31 @@ func (a *App) OpenSettings() {
 func (a *App) CloseSettings() {
 	a.closeOverlay()
 	a.Emit("overlay:close", nil)
+}
+
+// OpenOverview 打开每日概览（FR-308）。
+func (a *App) OpenOverview() {
+	a.openOverlay("overview", OverviewW, OverviewH, false)
+	a.Emit("overlay:open", "overview")
+}
+
+// CloseOverview 关闭每日概览。
+func (a *App) CloseOverview() {
+	a.closeOverlay()
+	a.Emit("overlay:close", nil)
+}
+
+// Overview 返回概览内容（逾期 + 今天到期）。
+func (a *App) Overview() (service.Overview, error) { return a.svc.Overview() }
+
+// MaybeShowOverview 启动时调用：当天首次启动且有事项需要关注时弹出每日概览。
+func (a *App) MaybeShowOverview() bool {
+	ok, err := a.svc.ClaimDailyOverview()
+	if err != nil || !ok {
+		return false
+	}
+	a.OpenOverview()
+	return true
 }
 
 // Overlay 返回当前叠加界面："quick" | "settings" | ""（前端启动时据此决定渲染）。
@@ -402,6 +429,25 @@ func (a *App) SetUnlockMode(mode, password string) error {
 }
 func (a *App) DisableEncryption(password string) error { return a.svc.DisableEncryption(password) }
 func (a *App) DeleteOldBackups() (int, error)          { return a.svc.DeletePlaintextBackups() }
+
+// ---------------------------------------------------------------- 数据目录（FR-605）
+
+func (a *App) DataDirStatus() service.DataDirStatus    { return a.svc.DataDirStatus() }
+func (a *App) InspectDataDir(path string) datadir.Info { return a.svc.InspectDataDir(path) }
+
+// PickDataDir 弹出文件夹选择对话框。
+func (a *App) PickDataDir() (string, error) { return a.shell.PickFolder("选择新的数据目录") }
+
+// ChangeDataDir 切换数据目录（copy | use | replace），切换在重启后生效。
+func (a *App) ChangeDataDir(target, mode string) (service.DataDirChange, error) {
+	return a.svc.ChangeDataDir(target, mode)
+}
+
+// RestartApp 保存窗口状态后重启程序。
+func (a *App) RestartApp() error {
+	a.saveWindow()
+	return a.shell.Restart()
+}
 
 // ---------------------------------------------------------------- 杂项
 

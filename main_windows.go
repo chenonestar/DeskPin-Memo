@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"deskpinmemo/internal/app"
+	"deskpinmemo/internal/datadir"
 	"deskpinmemo/internal/logx"
 	"deskpinmemo/internal/scheduler"
 	"deskpinmemo/internal/service"
@@ -34,29 +35,42 @@ const windowTitle = "DeskPinMemo-Sticky"
 
 func main() {
 	exe, _ := os.Executable()
-	dataDir := resolveDataDir(exe)
-	if lw, err := logx.Open(filepath.Join(dataDir, "logs")); err == nil {
+	cfgDir, portable := resolveConfigDir(exe)
+	// 数据目录（data.db 与 backups）可自定义（FR-605）；日志、WebView 缓存、图标留在配置目录
+	res := datadir.Resolution{Dir: cfgDir}
+	if !portable {
+		res = datadir.Resolve(cfgDir)
+	}
+	dataDir := res.Dir
+	if lw, err := logx.Open(filepath.Join(cfgDir, "logs")); err == nil {
 		log.SetOutput(lw)
 		defer lw.Close()
 	}
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
-	log.Printf("启动 DeskPin Memo %s，数据目录 %s", version, dataDir)
+	log.Printf("启动 DeskPin Memo %s，配置目录 %s，数据目录 %s", version, cfgDir, dataDir)
+	if res.Fallback != "" {
+		log.Print(res.Fallback)
+	}
 
-	st, err := store.Open(filepath.Join(dataDir, "data.db"))
+	opts := store.Options{}
+	if res.Custom { // 自定义（可能是网盘）目录：用单文件日志模式，没有 -wal/-shm 伴生文件
+		opts.JournalMode = "DELETE"
+	}
+	st, err := store.Open(filepath.Join(dataDir, "data.db"), opts)
 	if err != nil {
 		log.Printf("打开数据库失败: %v", err)
 		fatalDialog("无法打开数据库：" + err.Error())
 		return
 	}
 	defer st.Close()
-	svc, err := service.New(st, dataDir)
+	svc, err := service.New(st, dataDir, service.Options{ConfigDir: cfgDir, Portable: portable, Fallback: res.Fallback})
 	if err != nil {
 		log.Printf("初始化服务失败: %v", err)
 		fatalDialog("初始化失败：" + err.Error())
 		return
 	}
 	a := app.New(svc, &app.NopShell{}, version)
-	d := &daemon{app: a, svc: svc, exe: exe, dataDir: dataDir, silent: hasArg("--autostart")}
+	d := &daemon{app: a, svc: svc, exe: exe, dataDir: cfgDir, silent: hasArg("--autostart")}
 
 	err = wails.Run(&options.App{
 		Title:             windowTitle,
@@ -80,7 +94,7 @@ func main() {
 			WebviewIsTransparent: true,
 			WindowIsTranslucent:  false,
 			DisableWindowIcon:    true,
-			WebviewUserDataPath:  filepath.Join(dataDir, "webview"),
+			WebviewUserDataPath:  filepath.Join(cfgDir, "webview"),
 		},
 	})
 	if err != nil {
@@ -93,8 +107,8 @@ type daemon struct {
 	app     *app.App
 	svc     *service.Service
 	exe     string
-	dataDir string
-	silent  bool // --autostart 启动
+	dataDir string // 配置目录（图标等）；数据库位置由 service 管理
+	silent  bool   // --autostart 启动
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -178,6 +192,7 @@ func (d *daemon) init(ctx context.Context) {
 	sh.SetVisible(true) // 开机自启（--autostart）与手动启动一样静默显示便签（SW_SHOWNOACTIVATE，不抢焦点）
 	sh.SetOverdueBadge(d.svc.Store().CountOverdue())
 	go d.sched.Run(d.ctx)
+	d.app.MaybeShowOverview() // FR-308：当天首次启动时弹出今日概览
 
 	// 冷启动时由协议链接（通知按钮）拉起：处理命令行参数
 	for _, arg := range os.Args[1:] {
@@ -254,20 +269,20 @@ func (n notifier) Notify(nt scheduler.Notification) error {
 	return n.toaster.Notify(nt)
 }
 
-// resolveDataDir：绿色版（exe 旁存在 portable.flag）使用 exe 目录下的 data；
-// 否则 %APPDATA%\DeskPinMemo；环境变量 DESKPIN_DATA 优先（便于测试）。
-func resolveDataDir(exe string) string {
+// resolveConfigDir 返回配置目录以及是否为绿色版：绿色版（exe 旁存在 portable.flag）使用 exe 目录下的 data，
+// 且不允许改数据目录；否则 %APPDATA%\DeskPinMemo；环境变量 DESKPIN_DATA 优先（便于测试）。
+func resolveConfigDir(exe string) (string, bool) {
 	if v := os.Getenv("DESKPIN_DATA"); v != "" {
-		return v
+		return v, false
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(exe), "portable.flag")); err == nil {
-		return filepath.Join(filepath.Dir(exe), "data")
+		return filepath.Join(filepath.Dir(exe), "data"), true
 	}
 	base := os.Getenv("APPDATA")
 	if base == "" {
 		base, _ = os.UserConfigDir()
 	}
-	return filepath.Join(base, "DeskPinMemo")
+	return filepath.Join(base, "DeskPinMemo"), false
 }
 
 func hasArg(a string) bool {

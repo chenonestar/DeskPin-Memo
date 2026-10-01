@@ -173,3 +173,34 @@ export interface ImportStats {
   tags: number
   skipped: number
 }
+
+export interface Overview {
+  date: string
+  overdue: Item[]
+  today: Item[]
+  total: number
+}
+
+export interface DataDirStatus {
+  dir: string
+  configDir: string
+  custom: boolean
+  portable: boolean
+  fallback: string
+}
+
+export interface DirInfo {
+  path: string
+  valid: boolean
+  error: string
+  hasData: boolean
+  isDefault: boolean
+  warning: string
+}
+
+export interface DataDirChange {
+  newDir: string
+  oldDir: string
+  restartRequired: boolean
+  kept: string
+}

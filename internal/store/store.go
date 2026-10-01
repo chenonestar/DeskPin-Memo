@@ -44,6 +44,9 @@ type codecBox struct{ c Codec }
 // Options 为 Open 的可选项。
 type Options struct {
 	Now func() time.Time // 测试用
+	// JournalMode 为 SQLite 日志模式，默认 WAL。数据库放在网盘同步目录时用 DELETE
+	// （单文件，没有 -wal/-shm 伴生文件，不易被同步工具拷到不一致的状态）。
+	JournalMode string
 }
 
 // Open 打开（必要时创建并迁移）数据库。
@@ -51,8 +54,12 @@ func Open(path string, opts ...Options) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
+	jm := "WAL"
+	if len(opts) > 0 && (opts[0].JournalMode == "DELETE" || opts[0].JournalMode == "WAL") {
+		jm = opts[0].JournalMode
+	}
 	dsn := "file:" + filepath.ToSlash(path) +
-		"?_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=secure_delete(1)"
+		"?_pragma=journal_mode(" + jm + ")&_pragma=synchronous(FULL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=secure_delete(1)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

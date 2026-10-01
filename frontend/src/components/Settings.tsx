@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, on } from '../api'
-import type { EncStatus, Group, ImportInfo, Settings as S } from '../types'
+import type { DataDirChange, DataDirStatus, DirInfo, EncStatus, Group, ImportInfo, Settings as S } from '../types'
 import { t } from '../i18n/zh-CN'
 import { hotkeyFromEvent } from '../format'
 import { ConfirmDialog, Modal } from './Dialog'
@@ -130,6 +130,7 @@ function Reminder({ s, patch }: P) {
         <input id="drt" type="time" value={s.defaultRemindTime} onChange={(e) => e.target.value && void patch({ defaultRemindTime: e.target.value })} /></div>
       <Check label="播放提示音" checked={s.sound} onChange={(v) => void patch({ sound: v })} />
       <Check label="高优先级事项使用强提醒（置顶窗口，必须手动处理）" checked={s.strongReminder} onChange={(v) => void patch({ strongReminder: v })} />
+      <Check label="每天首次启动时弹出今日事项概览" checked={s.dailyOverview} onChange={(v) => void patch({ dailyOverview: v })} />
       <h4>免打扰</h4>
       <Check label="启用免打扰时段（提醒延后到时段结束）" checked={s.dnd.enabled} onChange={(v) => void patch({ dnd: { ...s.dnd, enabled: v } })} />
       <div className="rowline"><label htmlFor="dnd1">开始</label>
@@ -176,7 +177,6 @@ function Hotkeys({ s, patch, conflict }: P & { conflict: string[] }) {
 }
 
 function DataPane() {
-  const [dir, setDir] = useState('')
   const [backups, setBackups] = useState<string[]>([])
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
@@ -184,7 +184,7 @@ function DataPane() {
   const [impDlg, setImpDlg] = useState<{ path: string; info: ImportInfo; pw: string } | null>(null)
   const [confirmOverwrite, setConfirmOverwrite] = useState<{ path: string; pw: string } | null>(null)
 
-  const refresh = useCallback(() => { void api.dataDir().then(setDir); void api.listBackups().then((b) => setBackups(b ?? [])) }, [])
+  const refresh = useCallback(() => { void api.listBackups().then((b) => setBackups(b ?? [])) }, [])
   useEffect(refresh, [refresh])
   const run = async (f: () => Promise<string | void>) => {
     setErr(''); setMsg('')
@@ -205,9 +205,7 @@ function DataPane() {
 
   return (
     <>
-      <h4>数据目录</h4>
-      <div className="rowline"><code style={{ flex: 1, wordBreak: 'break-all' }} data-testid="data-dir">{dir}</code>
-        <button className="btn" onClick={() => void run(() => api.openDataDir())}>打开</button></div>
+      <DataDirSection onChanged={refresh} />
       <h4>备份</h4>
       <div className="hint">每天首次启动自动备份一次，保留最近 14 份。</div>
       <div className="rowline">
@@ -384,6 +382,96 @@ function About() {
       <div className="hint" style={{ marginTop: 8 }}>钉在桌面、一眼可见的备忘 / 待办。完全离线运行，数据只保存在本机，不上传任何内容，不含统计埋点。</div>
       <h4>快捷键</h4>
       <div className="hint">全局：Ctrl+Alt+N 快速新建 · Ctrl+Alt+M 显示/隐藏全部便签</div>
+    </>
+  )
+}
+
+function DataDirSection({ onChanged }: { onChanged: () => void }) {
+  const [st, setSt] = useState<DataDirStatus | null>(null)
+  const [dlg, setDlg] = useState(false)
+  const [target, setTarget] = useState('')
+  const [info, setInfo] = useState<DirInfo | null>(null)
+  const [mode, setMode] = useState<'use' | 'replace'>('use')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<DataDirChange | null>(null)
+  const load = useCallback(() => { void api.dataDirStatus().then(setSt) }, [])
+  useEffect(load, [load])
+
+  // 输入路径后（防抖）校验
+  useEffect(() => {
+    if (!dlg || !target.trim()) { setInfo(null); return }
+    let alive = true
+    const id = window.setTimeout(() => { void api.inspectDataDir(target).then((i) => alive && setInfo(i)) }, 250)
+    return () => { alive = false; window.clearTimeout(id) }
+  }, [target, dlg])
+
+  if (!st) return null
+  const open = (path = '') => { setTarget(path); setInfo(null); setErr(''); setResult(null); setMode('use'); setDlg(true) }
+  const close = () => { setDlg(false); load(); onChanged() }
+  const apply = async () => {
+    if (!info?.valid) return
+    setBusy(true); setErr('')
+    try {
+      const m = info.hasData ? mode : 'copy'
+      setResult(await api.changeDataDir(info.path, m))
+    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+
+  return (
+    <>
+      <h4>数据目录</h4>
+      <div className="rowline">
+        <code style={{ flex: 1, wordBreak: 'break-all' }} data-testid="data-dir">{st.dir}</code>
+        <button className="btn" onClick={() => void api.openDataDir()}>打开</button>
+      </div>
+      <div className="hint">{st.portable ? '绿色版：数据固定保存在程序目录下的 data 文件夹，不能更改。' : st.custom ? '当前使用自定义数据目录。日志和缓存仍保存在默认位置。' : '当前使用默认位置，可以改到其他磁盘或网盘同步目录。'}</div>
+      {st.fallback && <div className="err" role="alert" data-testid="datadir-fallback">⚠ {st.fallback}</div>}
+      {!st.portable && (
+        <div className="rowline">
+          <button className="btn" onClick={() => open()} data-testid="datadir-change">更改目录…</button>
+          {st.custom && <button className="btn" onClick={() => open(st.configDir)} data-testid="datadir-reset">恢复默认位置</button>}
+        </div>
+      )}
+      {dlg && (
+        <Modal title="更改数据目录" onClose={result ? undefined : close}
+          footer={result ? <>
+            <button className="btn" onClick={close}>稍后重启</button>
+            <button className="btn primary" onClick={() => void api.restartApp()} data-testid="datadir-restart">立即重启</button>
+          </> : <>
+            <button className="btn" onClick={close}>{t('cancel')}</button>
+            <button className="btn primary" disabled={busy || !info?.valid} onClick={() => void apply()} data-testid="datadir-apply">确定</button>
+          </>}>
+          {result ? (
+            <div data-testid="datadir-done">
+              <div>数据目录已设置为：<code style={{ wordBreak: 'break-all' }}>{result.newDir}</code></div>
+              <div className="hint" style={{ marginTop: 6 }}>重启后生效。原目录里的数据没有被删除，确认新目录正常后可手动清理：<br /><code style={{ wordBreak: 'break-all' }}>{result.oldDir}</code></div>
+              {result.kept && <div className="hint" style={{ marginTop: 6 }}>目标目录里原有的数据库已改名保留为：<code style={{ wordBreak: 'break-all' }}>{result.kept}</code></div>}
+            </div>
+          ) : (
+            <>
+              <div className="field">
+                <label>新的数据目录（完整路径）</label>
+                <div className="inline">
+                  <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder={'D:\\Sync\\DeskPinMemo'} aria-label="数据目录路径" data-testid="datadir-input" />
+                  <button className="btn" style={{ flex: 'none' }} onClick={async () => { const p = await api.pickDataDir(); if (p) setTarget(p) }}>浏览…</button>
+                </div>
+              </div>
+              {info && !info.valid && <div className="err" role="alert" data-testid="datadir-error">{info.error}</div>}
+              {info?.valid && info.warning && <div className="err" style={{ color: 'var(--accent)' }} data-testid="datadir-warning">⚠ {info.warning}</div>}
+              {info?.valid && !info.hasData && <div className="hint" data-testid="datadir-copy-note">会把当前全部数据（事项、设置、备份）复制到该目录，原目录里的数据保留不动。</div>}
+              {info?.valid && info.hasData && (
+                <div className="field" data-testid="datadir-conflict">
+                  <label>该目录里已经有一份 data.db：</label>
+                  <label><input type="radio" name="dd-mode" checked={mode === 'use'} onChange={() => setMode('use')} /> 使用目录里已有的数据（当前数据不会带过去）</label>
+                  <label><input type="radio" name="dd-mode" checked={mode === 'replace'} onChange={() => setMode('replace')} /> 用当前数据替换（目录里的旧数据库改名保留）</label>
+                </div>
+              )}
+              {err && <div className="err" role="alert">{err}</div>}
+            </>
+          )}
+        </Modal>
+      )}
     </>
   )
 }

@@ -6,8 +6,9 @@ import { Quick } from './components/Quick'
 import { Settings } from './components/Settings'
 import { LockScreen } from './components/LockScreen'
 import { StrongAlert } from './components/StrongAlert'
+import { OverviewPanel } from './components/OverviewPanel'
 
-type Overlay = '' | 'quick' | 'settings'
+type Overlay = '' | 'quick' | 'settings' | 'overview'
 
 export default function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null)
@@ -19,6 +20,7 @@ export default function App() {
   const [alerts, setAlerts] = useState<Notification[]>([])
   const [groupId, setGroupId] = useState('')
   const [fatal, setFatal] = useState('')
+  const [notice, setNotice] = useState('')
 
   const reloadGroups = useCallback(() => { void api.groups().then(setGroups) }, [])
 
@@ -28,6 +30,8 @@ export default function App() {
       const [b, gid, w, ov] = await Promise.all([api.bootstrap(), api.currentGroup(), api.applyWindow(), api.overlay()])
       setBoot(b); setGroups(b.groups); setSettings(b.settings); setLocked(b.locked)
       setGroupId(gid); setWin(w); setOverlay(ov as Overlay)
+      // 自定义数据目录不可用而回退到默认目录时，必须让用户看到：否则会误以为数据丢了
+      void api.dataDirStatus().then((d) => d.fallback && setNotice(d.fallback))
     } catch (e) { setFatal((e as Error).message) }
   }, [])
 
@@ -61,6 +65,8 @@ export default function App() {
     <>
       {overlay === 'quick' ? (
         <Quick groups={groups} groupId={groupId} />
+      ) : overlay === 'overview' ? (
+        <OverviewPanel />
       ) : overlay === 'settings' ? (
         <Settings settings={settings} groups={groups} onSettings={setSettings} reloadGroups={reloadGroups} onClose={closeSettings} />
       ) : locked ? (
@@ -69,6 +75,7 @@ export default function App() {
         <Sticky groups={groups} settings={settings} win={win} setWin={setWin} reloadGroups={reloadGroups}
           onOpenSettings={() => void api.openSettings()} />
       )}
+      {notice && <div className="banner" role="alert" style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 90, cursor: 'pointer' }} data-testid="datadir-notice" onClick={() => setNotice('')}>{notice}</div>}
       {alerts.length > 0 && <StrongAlert n={alerts[0]} onHandled={() => setAlerts((a) => a.slice(1))} />}
     </>
   )

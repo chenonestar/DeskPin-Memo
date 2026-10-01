@@ -79,3 +79,17 @@ func ListBackups(dir string) []string {
 }
 
 var _ = time.Second
+
+// CopyTo 把当前数据库一致地复制到 dst（VACUUM INTO，dst 必须不存在）。用于迁移数据目录。
+func (s *Store) CopyTo(dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.db.Exec(`VACUUM INTO ?`, dst); err != nil {
+		os.Remove(dst)
+		return err
+	}
+	return nil
+}

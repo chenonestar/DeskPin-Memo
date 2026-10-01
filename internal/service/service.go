@@ -19,10 +19,13 @@ import (
 
 // Service 汇集业务逻辑。方法均可被 Wails 绑定到前端。
 type Service struct {
-	st      *store.Store
-	dataDir string
-	now     func() time.Time
-	loc     func() *time.Location
+	st        *store.Store
+	dataDir   string
+	configDir string // 配置目录：日志、WebView 缓存、图标、数据目录指针（固定，不随数据迁移）
+	portable  bool   // 绿色版：数据固定在程序目录，不允许改数据目录
+	fallback  string // 自定义数据目录不可用而回退到默认目录时的说明
+	now       func() time.Time
+	loc       func() *time.Location
 
 	mu       sync.Mutex
 	settings Settings
@@ -47,12 +50,22 @@ const maxUndo = 50
 type Options struct {
 	Now func() time.Time
 	Loc func() *time.Location
+	// ConfigDir 为空时等于 dataDir。
+	ConfigDir string
+	Portable  bool
+	// Fallback 为启动时数据目录回退的说明，界面会提示用户。
+	Fallback string
 }
 
 // New 创建服务。dataDir 为 %APPDATA%\DeskPinMemo。
 func New(st *store.Store, dataDir string, opts ...Options) (*Service, error) {
 	s := &Service{st: st, dataDir: dataDir, now: time.Now, loc: func() *time.Location { return time.Local }}
+	s.configDir = dataDir
 	if len(opts) > 0 {
+		if opts[0].ConfigDir != "" {
+			s.configDir = opts[0].ConfigDir
+		}
+		s.portable, s.fallback = opts[0].Portable, opts[0].Fallback
 		if opts[0].Now != nil {
 			s.now = opts[0].Now
 		}

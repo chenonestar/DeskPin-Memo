@@ -26,6 +26,10 @@ type Shell interface {
 	CursorMonitorArea() Rect
 	// PickFile 弹出保存 / 打开对话框，返回路径（取消返回空串）。
 	PickFile(save bool, title, defaultName, pattern string) (string, error)
+	// PickFolder 弹出选择文件夹对话框，返回路径（取消返回空串）。
+	PickFolder(title string) (string, error)
+	// Restart 退出并重新启动程序（切换数据目录后需要）。
+	Restart() error
 	OpenPath(path string) error
 	SetOverdueBadge(n int)
 	Beep()
@@ -34,10 +38,11 @@ type Shell interface {
 
 // NopShell 是无操作实现（开发服务器、单元测试）。
 type NopShell struct {
-	R       Rect
-	Mode    string
-	Hidden  bool
-	Overdue int
+	R         Rect
+	Mode      string
+	Hidden    bool
+	Overdue   int
+	Restarted bool
 }
 
 func (n *NopShell) SetMode(m string) error                                { n.Mode = m; return nil }
@@ -51,6 +56,8 @@ func (n *NopShell) Visible() bool                                         { retu
 func (n *NopShell) Focus()                                                {}
 func (n *NopShell) CursorMonitorArea() Rect                               { return Rect{0, 0, 1920, 1040} }
 func (n *NopShell) PickFile(bool, string, string, string) (string, error) { return "", nil }
+func (n *NopShell) PickFolder(string) (string, error)                     { return "", nil }
+func (n *NopShell) Restart() error                                        { n.Restarted = true; return nil }
 func (n *NopShell) OpenPath(string) error                                 { return nil }
 func (n *NopShell) SetOverdueBadge(c int)                                 { n.Overdue = c }
 func (n *NopShell) Beep()                                                 {}
