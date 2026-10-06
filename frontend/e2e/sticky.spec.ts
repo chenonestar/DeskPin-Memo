@@ -211,8 +211,7 @@ test.describe('便签窗口', () => {
     await expect(page.getByTestId('add-input')).toBeVisible()
     await page.getByTestId('menu-btn').click()
     await page.getByRole('menuitem', { name: '锁定位置' }).click()
-    w = await rpc<{ collapsed: boolean; locked: boolean }>(page, 'ApplyWindow') as never
-    expect((w as unknown as { locked: boolean }).locked).toBe(true)
+    await expect.poll(async () => (await rpc<{ locked: boolean }>(page, 'ApplyWindow')).locked).toBe(true)
     await expect(page.locator('.grip')).toHaveCount(0)
     expect(g.id).toBeTruthy()
   })
@@ -221,12 +220,10 @@ test.describe('便签窗口', () => {
     await freshGroup(page)
     await page.getByTestId('mode-btn').click()
     await page.getByRole('menuitem', { name: '置顶' }).click()
-    let w = await rpc<{ mode: string }>(page, 'ApplyWindow')
-    expect(w.mode).toBe('top')
+    await expect.poll(async () => (await rpc<{ mode: string }>(page, 'ApplyWindow')).mode).toBe('top')
     await page.getByTestId('mode-btn').click()
     await page.getByRole('menuitem', { name: '钉在桌面' }).click()
-    w = await rpc<{ mode: string }>(page, 'ApplyWindow')
-    expect(w.mode).toBe('desktop')
+    await expect.poll(async () => (await rpc<{ mode: string }>(page, 'ApplyWindow')).mode).toBe('desktop')
   })
 
   test('FR-106：拖拽手动排序', async ({ page }) => {

@@ -60,6 +60,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
   const version = useDataVersion()
   const lingerRef = useRef(new Map<string, number>())
   const pendingRefresh = useRef(false)
+  const opacityQueue = useRef<Promise<unknown>>(Promise.resolve()) // 透明度滑块连续触发：请求必须按顺序发出，避免旧值后到覆盖新值
   const addRef = useRef<HTMLInputElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const dq = useDebounced(query, 120)
@@ -231,7 +232,10 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
         <div style={{ padding: '4px 10px' }}>
           <div className="lbl">{t('opacity')} {Math.round(opacity * 100)}%</div>
           <input type="range" min={30} max={100} defaultValue={Math.round(opacity * 100)} aria-label={t('opacity')}
-            onChange={(ev) => void api.setWindowOpacity(Number(ev.target.value) / 100).then(setWin)} />
+            onChange={(ev) => {
+              const v = Number(ev.target.value) / 100
+              opacityQueue.current = opacityQueue.current.then(() => api.setWindowOpacity(v)).then((w) => setWin(w)).catch(() => undefined)
+            }} />
         </div>) },
       { kind: 'custom', node: (
         <div className="swatches" role="group" aria-label={t('color')}>

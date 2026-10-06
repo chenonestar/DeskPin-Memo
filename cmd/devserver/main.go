@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -53,6 +54,7 @@ func main() {
 	dir := flag.String("data", "", "数据目录（默认临时目录）")
 	static := flag.String("static", "frontend/dist", "前端构建产物目录")
 	seed := flag.Bool("seed", false, "写入演示数据")
+	jitter := flag.Duration("jitter", 0, "给每个 RPC 加 0..jitter 的随机延迟（测试用：放大请求乱序，暴露界面与后端之间的时序问题）")
 	flag.Parse()
 
 	if *dir == "" {
@@ -88,6 +90,9 @@ func main() {
 	errType := reflect.TypeOf((*error)(nil)).Elem()
 	mux.HandleFunc("/rpc/", func(w http.ResponseWriter, r *http.Request) {
 		name := r.URL.Path[len("/rpc/"):]
+		if *jitter > 0 {
+			time.Sleep(time.Duration(rand.Int63n(int64(*jitter))))
+		}
 		m := rv.MethodByName(name)
 		if !m.IsValid() {
 			http.Error(w, jsonErr("未知方法 "+name), http.StatusNotFound)

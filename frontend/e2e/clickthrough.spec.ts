@@ -53,7 +53,7 @@ test.describe('FR-208 鼠标穿透', () => {
     await expect(alert).toBeVisible()
     await alert.getByRole('button', { name: '10 分钟后' }).click()
     await expect(alert).toHaveCount(0)
-    expect(await rpc<boolean>(page, 'ClickThroughEnabled')).toBe(true)
+    await expect.poll(async () => rpc<boolean>(page, 'ClickThroughEnabled')).toBe(true) // StrongAlertDone 在界面关闭后才发出
     // 另一个分组不受影响
     const other = await rpc<{ id: string }>(page, 'CreateGroup', `穿透对照${Date.now()}`, '')
     await rpc(page, 'ShowGroup', other.id)

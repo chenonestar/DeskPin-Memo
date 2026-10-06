@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, on } from '../api'
 import type { DataDirChange, DataDirStatus, RegTrace, DirInfo, EncStatus, Group, ImportInfo, Settings as S } from '../types'
 import { t } from '../i18n/zh-CN'
@@ -21,10 +21,21 @@ interface Props {
 export function Settings({ settings, groups, onSettings, reloadGroups, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('general')
   const [conflict, setConflict] = useState<string[]>([])
-  const patch = useCallback(async (p: Partial<S>) => {
-    onSettings({ ...settings, ...p }) // 乐观更新：控件立即反映，随后以后端规范化后的结果为准
-    onSettings(await api.saveSettings({ ...settings, ...p }))
-  }, [settings, onSettings])
+  // 设置保存必须串行：连续快速修改时，如果请求乱序到达后端，后到的旧值会覆盖新值。
+  // 因此 ① 始终基于最新的本地状态合并（latest），② 保存请求排队依次发出，③ 只有队列清空后才采用后端规范化的结果。
+  const latest = useRef(settings)
+  const pending = useRef(0)
+  const queue = useRef<Promise<unknown>>(Promise.resolve())
+  useEffect(() => { if (pending.current === 0) latest.current = settings }, [settings])
+  const patch = useCallback((p: Partial<S> | ((cur: S) => Partial<S>)) => {
+    latest.current = { ...latest.current, ...(typeof p === 'function' ? p(latest.current) : p) }
+    const snapshot = latest.current
+    onSettings(snapshot) // 乐观更新：控件立即反映
+    pending.current++
+    const job = queue.current.then(() => api.saveSettings(snapshot))
+    queue.current = job.catch(() => undefined)
+    return job.then((next) => { if (pending.current === 1) { latest.current = next; onSettings(next) } }).finally(() => { pending.current-- })
+  }, [onSettings])
 
   useEffect(() => on('hotkey:conflict', (d) => setConflict(d as string[])), [])
   useEffect(() => {
@@ -59,7 +70,7 @@ export function Settings({ settings, groups, onSettings, reloadGroups, onClose }
   )
 }
 
-type P = { s: S; patch: (p: Partial<S>) => Promise<void> }
+type P = { s: S; patch: (p: Partial<S> | ((cur: S) => Partial<S>)) => Promise<void> }
 
 function Check({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
@@ -135,11 +146,11 @@ function Reminder({ s, patch }: P) {
       <Check label="高优先级事项使用强提醒（置顶窗口，必须手动处理）" checked={s.strongReminder} onChange={(v) => void patch({ strongReminder: v })} />
       <Check label="每天首次启动时弹出今日事项概览" checked={s.dailyOverview} onChange={(v) => void patch({ dailyOverview: v })} />
       <h4>免打扰</h4>
-      <Check label="启用免打扰时段（提醒延后到时段结束）" checked={s.dnd.enabled} onChange={(v) => void patch({ dnd: { ...s.dnd, enabled: v } })} />
+      <Check label="启用免打扰时段（提醒延后到时段结束）" checked={s.dnd.enabled} onChange={(v) => void patch((c) => ({ dnd: { ...c.dnd, enabled: v } }))} />
       <div className="rowline"><label htmlFor="dnd1">开始</label>
-        <input id="dnd1" type="time" value={s.dnd.start} disabled={!s.dnd.enabled} onChange={(e) => e.target.value && void patch({ dnd: { ...s.dnd, start: e.target.value } })} /></div>
+        <input id="dnd1" type="time" value={s.dnd.start} disabled={!s.dnd.enabled} onChange={(e) => e.target.value && void patch((c) => ({ dnd: { ...c.dnd, start: e.target.value } }))} /></div>
       <div className="rowline"><label htmlFor="dnd2">结束</label>
-        <input id="dnd2" type="time" value={s.dnd.end} disabled={!s.dnd.enabled} onChange={(e) => e.target.value && void patch({ dnd: { ...s.dnd, end: e.target.value } })} /></div>
+        <input id="dnd2" type="time" value={s.dnd.end} disabled={!s.dnd.enabled} onChange={(e) => e.target.value && void patch((c) => ({ dnd: { ...c.dnd, end: e.target.value } }))} /></div>
       <div className="hint">同时会尊重 Windows「专注助手」设置：专注助手开启时系统会自行静音通知。</div>
     </>
   )
