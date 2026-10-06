@@ -76,12 +76,14 @@ func (n *NopShell) Quit()                                                 {}
 func (n *NopShell) memReg() *regtrace.MemRegistry {
 	if n.reg == nil {
 		n.reg = regtrace.NewMemRegistry()
-		const exe = `D:\Portable\DeskPinMemo\DeskPinMemo.exe`
-		_, _ = regtrace.Register(n.reg, exe, `C:\Users\me\AppData\Roaming\DeskPinMemo\icons\notify.png`)
-		_ = regtrace.SetAutostart(n.reg, exe, true)
+		_, _ = regtrace.Register(n.reg, fakeExe, `C:\Users\me\AppData\Roaming\DeskPinMemo\icons\notify.png`)
+		_ = regtrace.SetAutostart(n.reg, fakeExe, true)
 	}
 	return n.reg
 }
 
-func (n *NopShell) RegistryTraces() []regtrace.Trace { return regtrace.Traces(n.memReg()) }
-func (n *NopShell) ClearRegistry() ([]string, error) { return regtrace.Clear(n.memReg()) }
+func (n *NopShell) RegistryTraces() []regtrace.Trace { return regtrace.Traces(n.memReg(), fakeExe) }
+func (n *NopShell) ClearRegistry() ([]string, error) { return regtrace.Clear(n.memReg(), fakeExe) }
+
+// fakeExe 是 NopShell 模拟的 exe 路径。
+const fakeExe = `D:\Portable\DeskPinMemo\DeskPinMemo.exe`

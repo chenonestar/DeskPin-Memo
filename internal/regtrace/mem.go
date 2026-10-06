@@ -81,3 +81,24 @@ func (m *MemRegistry) KeyExists(path string) bool {
 	defer m.mu.Unlock()
 	return m.keys[norm(path)]
 }
+
+func (m *MemRegistry) SubKeys(path string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p := norm(path) + `\`
+	seen := map[string]bool{}
+	var out []string
+	for k := range m.keys {
+		if strings.HasPrefix(k, p) {
+			rest := k[len(p):]
+			if i := strings.Index(rest, `\`); i >= 0 {
+				rest = rest[:i]
+			}
+			if rest != "" && !seen[rest] {
+				seen[rest] = true
+				out = append(out, rest)
+			}
+		}
+	}
+	return out
+}

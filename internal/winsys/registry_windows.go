@@ -4,6 +4,7 @@ package winsys
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -92,6 +93,16 @@ func (winReg) KeyExists(path string) bool {
 	return true
 }
 
+func (winReg) SubKeys(path string) []string {
+	k, err := registry.OpenKey(registry.CURRENT_USER, path, registry.ENUMERATE_SUB_KEYS)
+	if err != nil {
+		return nil
+	}
+	defer k.Close()
+	names, _ := k.ReadSubKeyNames(-1)
+	return names
+}
+
 func fileExists(p string) bool {
 	_, err := os.Stat(strings.TrimSpace(p))
 	return err == nil
@@ -103,7 +114,15 @@ func SyncAutostart(exePath string, enabled bool) (string, error) {
 }
 
 // RegistryTraces 列出本程序写入 HKCU 的全部项。
-func (s *Shell) RegistryTraces() []regtrace.Trace { return regtrace.Traces(winReg{}) }
+func (s *Shell) RegistryTraces() []regtrace.Trace {
+	exe, _ := os.Executable()
+	return regtrace.Traces(winReg{}, exe)
+}
 
 // ClearRegistry 删除本程序写入 HKCU 的全部项。
-func (s *Shell) ClearRegistry() ([]string, error) { return regtrace.Clear(winReg{}) }
+func (s *Shell) ClearRegistry() ([]string, error) {
+	exe, _ := os.Executable()
+	// 通知中心里已弹出的历史通知也一并清掉（尽力而为，失败不影响注册表清理）
+	_ = runPowerShell(fmt.Sprintf(`[Windows.UI.Notifications.ToastNotificationManager]::History.Clear('%s')`, AppUserModelID))
+	return regtrace.Clear(winReg{}, exe)
+}

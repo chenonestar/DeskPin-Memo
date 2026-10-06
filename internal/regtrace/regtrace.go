@@ -18,6 +18,10 @@ const (
 	RunValue    = "DeskPinMemo"
 	AUMIDKey    = `Software\Classes\AppUserModelId\DeskPinMemo.App`
 	ProtocolKey = `Software\Classes\deskpin`
+	// 以下两项不是我们主动写的，而是 Windows 在我们弹出通知 / 显示托盘图标后自动生成的记录；
+	// 同样位于 HKCU，同样可以安全删除（再次使用时系统会重新生成）。
+	NotifSettingsKey = `Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\DeskPinMemo.App`
+	TrayIconsKey     = `Control Panel\NotifyIconSettings` // Windows 11：每个托盘程序一个子项，ExecutablePath 指向 exe
 )
 
 // Registry 是对 HKCU 的最小抽象。
@@ -28,6 +32,7 @@ type Registry interface {
 	DeleteValue(path, name string) error // 不存在视为成功
 	DeleteTree(path string) error        // 连同子项一起删除；不存在视为成功
 	KeyExists(path string) bool
+	SubKeys(path string) []string // 直接子项名；不存在返回空
 }
 
 // Trace 描述一项已写入的注册表内容，用于在设置页如实展示。
@@ -137,8 +142,20 @@ func SyncAutostart(reg Registry, exePath string, enabled bool, exists func(path 
 	return "", nil
 }
 
-// Traces 列出目前实际存在的注册表项。
-func Traces(reg Registry) []Trace {
+// trayIconEntries 返回 Windows 11 为本 exe 生成的托盘图标记录（NotifyIconSettings\<编号>）。
+func trayIconEntries(reg Registry, exePath string) []string {
+	var out []string
+	for _, sub := range reg.SubKeys(TrayIconsKey) {
+		path := TrayIconsKey + `\` + sub
+		if p, ok := reg.GetString(path, "ExecutablePath"); ok && exePath != "" && samePath(p, exePath) {
+			out = append(out, path)
+		}
+	}
+	return out
+}
+
+// Traces 列出目前实际存在的注册表项（含 Windows 自动生成的、与本程序相关的记录）。
+func Traces(reg Registry, exePath string) []Trace {
 	var out []Trace
 	if v, ok := reg.GetString(RunKey, RunValue); ok {
 		out = append(out, Trace{Key: `HKCU\` + RunKey + `\` + RunValue, Desc: "开机自启", Detail: v})
@@ -151,23 +168,30 @@ func Traces(reg Registry) []Trace {
 		cmd, _ := reg.GetString(ProtocolKey+`\shell\open\command`, "")
 		out = append(out, Trace{Key: `HKCU\` + ProtocolKey, Desc: "deskpin:// 协议（通知上的「完成 / 稍后」按钮回调）", Detail: cmd})
 	}
+	if reg.KeyExists(NotifSettingsKey) {
+		out = append(out, Trace{Key: `HKCU\` + NotifSettingsKey, Desc: "通知设置记录（Windows 在首次弹出通知后自动生成）"})
+	}
+	for _, p := range trayIconEntries(reg, exePath) {
+		out = append(out, Trace{Key: `HKCU\` + p, Desc: "托盘图标记录（Windows 11 自动生成）", Detail: exePath})
+	}
 	return out
 }
 
 // Clear 删除全部注册表项，返回被删除的项。程序下次启动时会重新写入通知身份和协议（Toast 需要）。
-func Clear(reg Registry) ([]string, error) {
+func Clear(reg Registry, exePath string) ([]string, error) {
 	var removed []string
-	for _, t := range Traces(reg) {
+	for _, t := range Traces(reg, exePath) {
 		removed = append(removed, t.Key)
 	}
+	// 先收集托盘记录再删：删除后无法再按 ExecutablePath 匹配
+	tray := trayIconEntries(reg, exePath)
 	if err := reg.DeleteValue(RunKey, RunValue); err != nil {
 		return removed, err
 	}
-	if err := reg.DeleteTree(AUMIDKey); err != nil {
-		return removed, err
-	}
-	if err := reg.DeleteTree(ProtocolKey); err != nil {
-		return removed, err
+	for _, key := range append([]string{AUMIDKey, ProtocolKey, NotifSettingsKey}, tray...) {
+		if err := reg.DeleteTree(key); err != nil {
+			return removed, err
+		}
 	}
 	return removed, nil
 }

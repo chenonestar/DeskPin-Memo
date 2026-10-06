@@ -129,12 +129,12 @@ func TestSyncDoesNotStealOtherLiveCopy(t *testing.T) {
 
 func TestTracesAndClear(t *testing.T) { // B：清除注册表痕迹
 	r := NewMemRegistry()
-	if len(Traces(r)) != 0 {
+	if len(Traces(r, exeA)) != 0 {
 		t.Fatal("初始应为空")
 	}
 	Register(r, exeA, `C:\i.png`)
 	SetAutostart(r, exeA, true)
-	tr := Traces(r)
+	tr := Traces(r, exeA)
 	if len(tr) != 3 {
 		t.Fatalf("应列出 3 项: %+v", tr)
 	}
@@ -150,22 +150,58 @@ func TestTracesAndClear(t *testing.T) { // B：清除注册表痕迹
 			t.Errorf("缺少 %q:\n%s", want, joined)
 		}
 	}
-	removed, err := Clear(r)
+	removed, err := Clear(r, exeA)
 	if err != nil || len(removed) != 3 {
 		t.Fatal(removed, err)
 	}
-	if len(Traces(r)) != 0 || r.KeyExists(ProtocolKey+`\shell\open\command`) || r.KeyExists(AUMIDKey) {
+	if len(Traces(r, exeA)) != 0 || r.KeyExists(ProtocolKey+`\shell\open\command`) || r.KeyExists(AUMIDKey) {
 		t.Fatal("应全部清除，包括协议的子项")
 	}
 	// 再次清除不报错
-	if _, err := Clear(r); err != nil {
+	if _, err := Clear(r, exeA); err != nil {
 		t.Fatal(err)
 	}
 	// 不影响注册表里的其他内容
 	r.SetString(`Software\Other`, "x", "1")
 	Register(r, exeA, "i")
-	Clear(r)
+	Clear(r, exeA)
 	if v, ok := r.GetString(`Software\Other`, "x"); !ok || v != "1" {
 		t.Fatal("不应动到无关项")
+	}
+}
+
+func TestTracesIncludeWindowsGeneratedRecords(t *testing.T) {
+	r := NewMemRegistry()
+	Register(r, exeA, `C:\i.png`)
+	SetAutostart(r, exeA, true)
+	// Windows 弹出通知后自动生成；Windows 11 为托盘图标生成 NotifyIconSettings 子项
+	r.SetDWord(NotifSettingsKey, "Enabled", 1)
+	r.SetString(TrayIconsKey+`\111`, "ExecutablePath", exeA)
+	r.SetString(TrayIconsKey+`\222`, "ExecutablePath", `C:\Windows\explorer.exe`) // 别的程序
+	r.SetString(TrayIconsKey+`\333`, "ExecutablePath", strings.ToUpper(exeA))     // 同一个 exe，大小写不同
+
+	tr := Traces(r, exeA)
+	if len(tr) != 6 {
+		t.Fatalf("自启 / 通知身份 / 协议 / 通知设置 / 2 条托盘记录 = 6: %+v", tr)
+	}
+	removed, err := Clear(r, exeA)
+	if err != nil || len(removed) != 6 {
+		t.Fatal(removed, err)
+	}
+	if r.KeyExists(NotifSettingsKey) || r.KeyExists(TrayIconsKey+`\111`) || r.KeyExists(TrayIconsKey+`\333`) {
+		t.Fatal("应清除通知设置记录和本 exe 的托盘记录")
+	}
+	if !r.KeyExists(TrayIconsKey + `\222`) {
+		t.Fatal("绝不能删除别的程序的托盘记录")
+	}
+	if v, _ := r.GetString(TrayIconsKey+`\222`, "ExecutablePath"); v == "" {
+		t.Fatal("别的程序的记录内容应保持")
+	}
+	// exe 路径为空时不匹配任何托盘记录（避免误删）
+	r.SetString(TrayIconsKey+`\444`, "ExecutablePath", "")
+	Traces(r, "")
+	Clear(r, "")
+	if !r.KeyExists(TrayIconsKey + `\444`) {
+		t.Fatal("未知 exe 路径时不应删除任何托盘记录")
 	}
 }

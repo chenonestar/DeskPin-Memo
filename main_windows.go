@@ -35,7 +35,20 @@ const windowTitle = "DeskPinMemo-Sticky"
 
 func main() {
 	exe, _ := os.Executable()
+	if os.Getenv("DESKPIN_ALLOW_TEMP") == "" && datadir.RunningFromTempOrArchive(exe, os.TempDir()) {
+		// 在压缩包里直接双击 exe：旁边没有 portable.flag，数据和注册表项会散落到系统目录
+		fatalDialog("检测到程序正在压缩包或系统临时目录中运行：\n" + filepath.Dir(exe) +
+			"\n\n请先把整个压缩包完整解压到一个固定的文件夹（例如 D:\\Tools\\DeskPinMemo），再运行其中的 DeskPinMemo.exe。")
+		return
+	}
 	cfgDir, portable := resolveConfigDir(exe)
+	if portable {
+		if err := datadir.EnsureWritable(cfgDir); err != nil {
+			fatalDialog("绿色版需要在程序所在文件夹里创建 data 子目录保存数据，但该位置不可写：\n" + cfgDir +
+				"\n\n原因：" + err.Error() + "\n\n请把程序文件夹复制到可写的位置（如 D:\\Tools）后再运行。")
+			return
+		}
+	}
 	// 数据目录（data.db 与 backups）可自定义（FR-605）；日志、WebView 缓存、图标留在配置目录
 	res := datadir.Resolution{Dir: cfgDir}
 	if !portable {
@@ -53,7 +66,8 @@ func main() {
 	}
 
 	opts := store.Options{}
-	if res.Custom { // 自定义（可能是网盘）目录：用单文件日志模式，没有 -wal/-shm 伴生文件
+	if res.Custom || portable { // 自定义（可能是网盘）目录、绿色版（可能在 U 盘上）：用单文件回滚日志模式，没有 -wal/-shm 伴生文件，
+		// 文件夹整体拷走更安全
 		opts.JournalMode = "DELETE"
 	}
 	st, err := store.Open(filepath.Join(dataDir, "data.db"), opts)

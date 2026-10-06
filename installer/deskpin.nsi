@@ -32,6 +32,7 @@ BrandingText "${APPNAME} ${VERSION}"
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey /LANG=2052 "ProductName" "${APPNAME}"
 VIAddVersionKey /LANG=2052 "FileVersion" "${VERSION}"
+VIAddVersionKey /LANG=2052 "LegalCopyright" "DeskPin Memo"
 VIAddVersionKey /LANG=2052 "FileDescription" "${APPNAME} 安装程序"
 
 Section "Install"
@@ -60,6 +61,21 @@ Section "Uninstall"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "DeskPinMemo"
   DeleteRegKey HKCU "Software\Classes\AppUserModelId\DeskPinMemo.App"
   DeleteRegKey HKCU "Software\Classes\deskpin"
+  ; Windows 在弹出通知后自动生成的通知设置记录
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\DeskPinMemo.App"
+  ; Windows 11 为托盘图标生成的记录（NotifyIconSettings\<编号>，ExecutablePath 指向本程序）：只删除指向本程序的
+  StrCpy $R0 0
+  trayloop:
+    EnumRegKey $R1 HKCU "Control Panel\NotifyIconSettings" $R0
+    StrCmp $R1 "" traydone
+    ReadRegStr $R2 HKCU "Control Panel\NotifyIconSettings\$R1" "ExecutablePath"
+    StrCmp $R2 "$INSTDIR\${EXE}" 0 traynext
+      DeleteRegKey HKCU "Control Panel\NotifyIconSettings\$R1"
+      Goto trayloop ; 删除后同一索引上是下一个子项，不递增
+    traynext:
+      IntOp $R0 $R0 + 1
+      Goto trayloop
+  traydone:
   DeleteRegKey HKCU "${UNINSTKEY}"
   DeleteRegKey HKCU "Software\DeskPinMemo"
 SectionEnd

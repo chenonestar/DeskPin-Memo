@@ -111,3 +111,37 @@ func TestCopyFile(t *testing.T) {
 		t.Fatal("不应留下临时文件")
 	}
 }
+
+func TestRunningFromTempOrArchive(t *testing.T) {
+	const tmp = `C:\Users\me\AppData\Local\Temp`
+	for exe, want := range map[string]bool{
+		`C:\Users\me\AppData\Local\Temp\Temp1_DeskPinMemo-1.0.0-portable.zip\DeskPinMemo.exe`: true,  // 资源管理器直接打开压缩包里的 exe
+		`C:\Users\me\AppData\Local\Temp\7zO8A1B2C3D\DeskPinMemo.exe`:                          true,  // 7-Zip 临时解压
+		`C:\Users\me\AppData\Local\Temp\Rar$EXa12.345\DeskPinMemo.exe`:                        true,  // WinRAR
+		`c:\users\ME\appdata\local\temp\x\DeskPinMemo.exe`:                                    true,  // 大小写不敏感
+		`C:\Users\me\Downloads\DeskPinMemo-1.0.0-portable.zip\DeskPinMemo.exe`:                true,  // 压缩包虚拟路径
+		`D:\Tools\DeskPinMemo\DeskPinMemo.exe`:                                                false, // 正常解压后的目录
+		`C:\Users\me\Desktop\DeskPinMemo\DeskPinMemo.exe`:                                     false,
+		`C:\Users\me\AppData\Local\Temporary Notes\DeskPinMemo.exe`:                           false, // 前缀相似但不是临时目录
+		`E:\USB\DeskPinMemo.exe`:                                                              false,
+	} {
+		if got := RunningFromTempOrArchive(exe, tmp); got != want {
+			t.Errorf("%s: got %v want %v", exe, got, want)
+		}
+	}
+	if RunningFromTempOrArchive(`D:\x\a.exe`, "") {
+		t.Fatal("临时目录未知时只按压缩包路径判断")
+	}
+}
+
+func TestEnsureWritable(t *testing.T) {
+	d := filepath.Join(t.TempDir(), "a", "b")
+	if err := EnsureWritable(d); err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(t.TempDir(), "file")
+	os.WriteFile(f, nil, 0o644)
+	if err := EnsureWritable(filepath.Join(f, "sub")); err == nil {
+		t.Fatal("父路径是文件时应报错")
+	}
+}

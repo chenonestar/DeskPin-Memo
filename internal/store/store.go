@@ -59,7 +59,7 @@ func Open(path string, opts ...Options) (*Store, error) {
 		jm = opts[0].JournalMode
 	}
 	dsn := "file:" + filepath.ToSlash(path) +
-		"?_pragma=journal_mode(" + jm + ")&_pragma=synchronous(FULL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=secure_delete(1)"
+		"?_pragma=journal_mode(" + jm + ")&_pragma=synchronous(FULL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=secure_delete(1)&_pragma=temp_store(2)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

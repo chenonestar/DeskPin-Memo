@@ -185,3 +185,27 @@ func CopyFile(src, dst string) error {
 
 // ErrNotEmpty 表示目标目录已有数据，需要用户选择如何处理。
 var ErrNotEmpty = errors.New("目标目录已有数据")
+
+// EnsureWritable 确认目录存在且可写；不可写时返回带原因的错误（绿色版放在只读位置时给出明确提示）。
+func EnsureWritable(dir string) error { return checkWritable(dir) }
+
+// RunningFromTempOrArchive 判断 exe 是否在系统临时目录或压缩包虚拟路径里运行。
+// 典型情形：在压缩包里直接双击 exe（Explorer / 7-Zip / WinRAR 会把它解压到临时目录）。
+// 这时旁边没有 portable.flag，程序会把数据和日志写到 %APPDATA%、注册表也会被写入，
+// 而用户以为自己用的是「绿色版」——所以应当提示先完整解压。
+func RunningFromTempOrArchive(exePath, tempDir string) bool {
+	norm := func(p string) string {
+		return strings.ToLower(strings.TrimRight(strings.ReplaceAll(p, "/", `\`), `\`))
+	}
+	dir := norm(filepath.Dir(strings.ReplaceAll(exePath, `\`, "/")))
+	dir = norm(dir)
+	if t := norm(tempDir); t != "" && (dir == t || strings.HasPrefix(dir, t+`\`)) {
+		return true
+	}
+	for _, ext := range []string{".zip", ".rar", ".7z"} {
+		if strings.Contains(dir+`\`, ext+`\`) {
+			return true
+		}
+	}
+	return false
+}

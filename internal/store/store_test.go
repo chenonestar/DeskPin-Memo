@@ -466,3 +466,11 @@ func TestReopenKeepsDeviceIDAndClock(t *testing.T) {
 		t.Fatal("重启后 hlc 必须继续递增")
 	}
 }
+
+func TestTempStoreInMemory(t *testing.T) { // 排序 / 临时表不落盘到系统临时目录
+	s := open(t)
+	var v int
+	if err := s.db.QueryRow(`PRAGMA temp_store`).Scan(&v); err != nil || v != 2 {
+		t.Fatalf("temp_store 应为 MEMORY(2): %d %v", v, err)
+	}
+}
