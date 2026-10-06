@@ -14,9 +14,8 @@ import (
 	"syscall"
 	u16 "unicode/utf16"
 
+	"deskpinmemo/internal/regtrace"
 	"deskpinmemo/internal/scheduler"
-
-	"golang.org/x/sys/windows/registry"
 )
 
 // AppUserModelID 用于 Toast 归属（1.5 通知图标与 AUMID）。
@@ -28,35 +27,16 @@ const ProtocolScheme = "deskpin"
 const createNoWindow = 0x08000000
 
 // RegisterIdentity 注册 AUMID（显示名与图标）和 deskpin:// 协议，均写入 HKCU，无需管理员权限。
-// 没有 AUMID 注册时 Win10 会丢弃未打包应用的 Toast。
+// 没有 AUMID 注册时 Win10 会丢弃未打包应用的 Toast。内容未变化时不重复写入；
+// 程序目录被移动后，下次启动会自动把协议命令更新到新位置。
 func RegisterIdentity(exePath, dataDir string) error {
 	iconPath := filepath.Join(dataDir, "icons", "notify.png")
 	if b, err := iconFS.ReadFile("icons/notify.png"); err == nil {
 		_ = os.MkdirAll(filepath.Dir(iconPath), 0o755)
 		_ = os.WriteFile(iconPath, b, 0o644)
 	}
-	k, _, err := registry.CreateKey(registry.CURRENT_USER, `Software\Classes\AppUserModelId\`+AppUserModelID, registry.SET_VALUE)
-	if err != nil {
-		return err
-	}
-	defer k.Close()
-	_ = k.SetStringValue("DisplayName", "桌面备忘钉")
-	_ = k.SetStringValue("IconUri", iconPath)
-	_ = k.SetDWordValue("ShowInSettings", 1)
-
-	pk, _, err := registry.CreateKey(registry.CURRENT_USER, `Software\Classes\`+ProtocolScheme, registry.SET_VALUE)
-	if err != nil {
-		return err
-	}
-	defer pk.Close()
-	_ = pk.SetStringValue("", "URL:DeskPin Memo")
-	_ = pk.SetStringValue("URL Protocol", "")
-	ck, _, err := registry.CreateKey(registry.CURRENT_USER, `Software\Classes\`+ProtocolScheme+`\shell\open\command`, registry.SET_VALUE)
-	if err != nil {
-		return err
-	}
-	defer ck.Close()
-	return ck.SetStringValue("", fmt.Sprintf(`"%s" "%%1"`, exePath))
+	_, err := regtrace.Register(winReg{}, exePath, iconPath)
+	return err
 }
 
 // ---- Toast ----
@@ -145,31 +125,13 @@ func runPowerShell(script string) error {
 
 // ---- 开机自启（FR-503）----
 
-const runKey = `Software\Microsoft\Windows\CurrentVersion\Run`
-
-// SetAutostart 写入 / 删除 HKCU\...\Run，无需管理员权限。启动参数 --autostart 表示静默启动。
+// SetAutostart 按用户的明确操作写入 / 删除 HKCU\...\Run，无需管理员权限。启动参数 --autostart 表示静默启动。
 func SetAutostart(enable bool, exePath string) error {
-	k, _, err := registry.CreateKey(registry.CURRENT_USER, runKey, registry.SET_VALUE)
-	if err != nil {
-		return err
-	}
-	defer k.Close()
-	if !enable {
-		if err := k.DeleteValue("DeskPinMemo"); err != nil && err != registry.ErrNotExist {
-			return err
-		}
-		return nil
-	}
-	return k.SetStringValue("DeskPinMemo", fmt.Sprintf(`"%s" --autostart`, exePath))
+	return regtrace.SetAutostart(winReg{}, exePath, enable)
 }
 
 // AutostartEnabled 返回当前是否已配置自启。
 func AutostartEnabled() bool {
-	k, err := registry.OpenKey(registry.CURRENT_USER, runKey, registry.QUERY_VALUE)
-	if err != nil {
-		return false
-	}
-	defer k.Close()
-	_, _, err = k.GetStringValue("DeskPinMemo")
-	return err == nil
+	_, ok := winReg{}.GetString(regtrace.RunKey, regtrace.RunValue)
+	return ok
 }

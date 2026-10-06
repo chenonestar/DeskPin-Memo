@@ -76,6 +76,11 @@ func New(st *store.Store, dataDir string, opts ...Options) (*Service, error) {
 	s.Emit, s.Kick, s.OnOverdue, s.OnSettings = func(string, any) {}, func() {}, func(int) {}, func(Settings) {}
 	s.OnStrongShow = func(scheduler.Notification) {}
 	cfg := DefaultSettings()
+	if s.portable {
+		// 绿色版默认不自启：开机自启要写注册表，且路径固定为当前 exe，搬动文件夹会失效；
+		// 拿到 zip 只想试用的人不应被悄悄加上开机启动。用户仍可在设置里手动开启。
+		cfg.Autostart = false
+	}
 	if ok, err := st.GetSetting("app", &cfg); err != nil {
 		return nil, err
 	} else if !ok {

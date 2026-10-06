@@ -1,5 +1,7 @@
 package app
 
+import "deskpinmemo/internal/regtrace"
+
 // Rect 是屏幕坐标下的矩形（物理像素）。
 type Rect struct {
 	X int `json:"x"`
@@ -30,6 +32,9 @@ type Shell interface {
 	PickFile(save bool, title, defaultName, pattern string) (string, error)
 	// PickFolder 弹出选择文件夹对话框，返回路径（取消返回空串）。
 	PickFolder(title string) (string, error)
+	// RegistryTraces 列出本程序写入当前用户注册表（HKCU）的全部项；ClearRegistry 删除它们。
+	RegistryTraces() []regtrace.Trace
+	ClearRegistry() ([]string, error)
 	// Restart 退出并重新启动程序（切换数据目录后需要）。
 	Restart() error
 	OpenPath(path string) error
@@ -45,6 +50,7 @@ type NopShell struct {
 	Hidden       bool
 	Overdue      int
 	Restarted    bool
+	reg          *regtrace.MemRegistry // 模拟的注册表（开发服务器 / 测试）
 	ClickThrough bool
 }
 
@@ -66,3 +72,16 @@ func (n *NopShell) OpenPath(string) error                                 { retu
 func (n *NopShell) SetOverdueBadge(c int)                                 { n.Overdue = c }
 func (n *NopShell) Beep()                                                 {}
 func (n *NopShell) Quit()                                                 {}
+
+func (n *NopShell) memReg() *regtrace.MemRegistry {
+	if n.reg == nil {
+		n.reg = regtrace.NewMemRegistry()
+		const exe = `D:\Portable\DeskPinMemo\DeskPinMemo.exe`
+		_, _ = regtrace.Register(n.reg, exe, `C:\Users\me\AppData\Roaming\DeskPinMemo\icons\notify.png`)
+		_ = regtrace.SetAutostart(n.reg, exe, true)
+	}
+	return n.reg
+}
+
+func (n *NopShell) RegistryTraces() []regtrace.Trace { return regtrace.Traces(n.memReg()) }
+func (n *NopShell) ClearRegistry() ([]string, error) { return regtrace.Clear(n.memReg()) }

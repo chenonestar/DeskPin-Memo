@@ -376,3 +376,33 @@ func TestRecurringCopiesSubtasksReset(t *testing.T) {
 		t.Fatal("下一次实例的子任务 id 应确定性生成")
 	}
 }
+
+// ---- 绿色版默认不自启 ----
+
+func TestPortableDefaultsAutostartOff(t *testing.T) {
+	open := func(portable bool) *Service {
+		dir := t.TempDir()
+		st, _ := store.Open(filepath.Join(dir, "data.db"))
+		t.Cleanup(func() { st.Close() })
+		svc, err := New(st, dir, Options{Portable: portable})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return svc
+	}
+	if !open(false).GetSettings().Autostart {
+		t.Fatal("安装版默认开启自启（需求书 FR-503）")
+	}
+	p := open(true)
+	if p.GetSettings().Autostart {
+		t.Fatal("绿色版默认不应开启开机自启")
+	}
+	// 用户手动开启后保留，重启不会被默认值覆盖
+	s := p.GetSettings()
+	s.Autostart = true
+	p.SaveSettings(s)
+	p2, _ := New(p.st, p.dataDir, Options{Portable: true})
+	if !p2.GetSettings().Autostart {
+		t.Fatal("用户明确开启的设置应被保留")
+	}
+}

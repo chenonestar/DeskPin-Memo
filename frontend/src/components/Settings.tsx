@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, on } from '../api'
-import type { DataDirChange, DataDirStatus, DirInfo, EncStatus, Group, ImportInfo, Settings as S } from '../types'
+import type { DataDirChange, DataDirStatus, RegTrace, DirInfo, EncStatus, Group, ImportInfo, Settings as S } from '../types'
 import { t } from '../i18n/zh-CN'
 import { hotkeyFromEvent } from '../format'
 import { ConfirmDialog, Modal } from './Dialog'
@@ -72,11 +72,14 @@ function Check({ label, checked, onChange, disabled }: { label: string; checked:
 
 function General({ s, groups, patch, reloadGroups }: P & { groups: Group[]; reloadGroups: () => void }) {
   const [names, setNames] = useState<Record<string, string>>({})
+  const [portable, setPortable] = useState(false)
+  useEffect(() => { void api.dataDirStatus().then((d) => setPortable(d.portable)) }, [])
   const [delId, setDelId] = useState<string | null>(null)
   return (
     <>
       <h4>启动</h4>
       <Check label="开机自动启动（静默显示便签）" checked={s.autostart} onChange={(v) => void patch({ autostart: v })} />
+      {portable && <div className="hint" data-testid="portable-autostart-hint">绿色版默认不开机自启。开启后会在当前用户注册表（HKCU\...\Run）写入本程序当前所在位置；之后搬动文件夹，下次手动启动时会自动更新为新位置。删除文件夹前可在「数据 → 系统注册表项」里清除。</div>}
       <div className="rowline"><label htmlFor="lang">界面语言</label>
         <select id="lang" value={s.language} disabled onChange={() => undefined}><option value="zh-CN">简体中文</option></select></div>
       <h4>分组</h4>
@@ -221,6 +224,7 @@ function DataPane() {
       <div className="rowline"><button className="btn" onClick={pickImport} data-testid="import-json">从 JSON 导入…</button></div>
       {msg && <div className="hint" role="status" style={{ color: 'var(--ok)' }}>{msg}</div>}
       {err && <div className="err" role="alert">{err}</div>}
+      <RegistrySection />
       <Encryption onChanged={refresh} />
 
       {expDlg && <ExportDialog onClose={() => setExpDlg(false)} onExport={(pw) => { setExpDlg(false); void run(async () => { const p = await api.exportJSON(pw); return p ? '已导出：' + p : undefined }) }} />}
@@ -472,6 +476,54 @@ function DataDirSection({ onChanged }: { onChanged: () => void }) {
           )}
         </Modal>
       )}
+    </>
+  )
+}
+
+function RegistrySection() {
+  const [traces, setTraces] = useState<RegTrace[] | null>(null)
+  const [confirm, setConfirm] = useState(false)
+  const [removed, setRemoved] = useState<string[] | null>(null)
+  const [err, setErr] = useState('')
+  const load = useCallback(() => { void api.registryTraces().then(setTraces) }, [])
+  useEffect(load, [load])
+  if (!traces) return null
+  const clear = async () => {
+    setErr('')
+    try { setRemoved(await api.clearRegistryTraces()); setConfirm(false); load() } catch (e) { setErr((e as Error).message) }
+  }
+  return (
+    <>
+      <h4>系统注册表项</h4>
+      <div className="hint">本程序只会写入<b>当前用户</b>注册表（HKCU，不需要管理员权限），用于开机自启和 Toast 通知。绿色版删除文件夹前建议先清除，否则这些项会残留。</div>
+      {traces.length === 0 ? (
+        <div className="hint" data-testid="reg-empty" style={{ marginTop: 6 }}>当前没有任何注册表项。</div>
+      ) : (
+        <ul className="reglist" data-testid="reg-list">
+          {traces.map((t) => (
+            <li key={t.key} data-testid="reg-item">
+              <div><b>{t.desc}</b></div>
+              <code>{t.key}</code>
+              {t.detail && <div className="hint" style={{ wordBreak: 'break-all' }}>{t.detail}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="rowline"><button className="btn" disabled={traces.length === 0} onClick={() => setConfirm(true)} data-testid="reg-clear">清除注册表项…</button></div>
+      {removed && (
+        <Modal title="已清除" footer={<>
+          <button className="btn" onClick={() => setRemoved(null)}>继续使用</button>
+          <button className="btn primary" onClick={() => void api.quit()} data-testid="reg-quit">退出程序</button>
+        </>}>
+          <div data-testid="reg-done">已删除 {removed.length} 项，「开机自启」设置也已关闭。现在可以退出程序并删除文件夹。</div>
+          <div className="hint" style={{ marginTop: 6 }}>如果继续使用，通知身份和协议会在下次启动时重新写入（Toast 通知需要）。</div>
+        </Modal>
+      )}
+      {confirm && (
+        <ConfirmDialog title="清除注册表项" okText="清除" danger={false} onCancel={() => setConfirm(false)} onOk={() => void clear()}
+          message={<>将删除上面列出的 {traces.length} 项，并关闭「开机自启」。<br />清除后，通知上的「完成 / 稍后」按钮在程序下次启动前不可用。</>} />
+      )}
+      {err && <div className="err" role="alert">{err}</div>}
     </>
   )
 }

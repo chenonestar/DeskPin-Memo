@@ -129,3 +129,29 @@ func TestClickThroughEmitsWindowState(t *testing.T) {
 		t.Fatalf("%+v", ws)
 	}
 }
+
+func TestClearRegistryTraces(t *testing.T) { // 绿色版：删除文件夹前清除注册表痕迹
+	a, sh := newApp(t)
+	if got := a.RegistryTraces(); len(got) != 3 {
+		t.Fatalf("应列出自启、通知身份、协议 3 项: %+v", got)
+	}
+	s := a.GetSettings()
+	s.Autostart = true
+	a.SaveSettings(s)
+	removed, err := a.ClearRegistryTraces()
+	if err != nil || len(removed) != 3 {
+		t.Fatal(removed, err)
+	}
+	if got := a.RegistryTraces(); len(got) != 0 {
+		t.Fatalf("清除后应为空: %+v", got)
+	}
+	if a.GetSettings().Autostart {
+		t.Fatal("清除时必须同时关闭「开机自启」设置，否则下次启动会重新写入")
+	}
+	// 再次清除不报错，返回空列表而不是 nil（前端按数组处理）
+	removed, err = a.ClearRegistryTraces()
+	if err != nil || removed == nil || len(removed) != 0 {
+		t.Fatal(removed, err)
+	}
+	_ = sh
+}

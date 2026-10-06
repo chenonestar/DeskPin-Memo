@@ -219,3 +219,9 @@ export interface DataDirChange {
   restartRequired: boolean
   kept: string
 }
+
+export interface RegTrace {
+  key: string
+  desc: string
+  detail: string
+}

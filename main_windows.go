@@ -110,6 +110,9 @@ type daemon struct {
 	dataDir string // 配置目录（图标等）；数据库位置由 service 管理
 	silent  bool   // --autostart 启动
 
+	autostartKnown bool // 是否已在启动时同步过自启项
+	lastAutostart  bool
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	shell  *winsys.Shell
@@ -205,9 +208,22 @@ func (d *daemon) init(ctx context.Context) {
 }
 
 func (d *daemon) applySettings(s service.Settings) {
-	if err := winsys.SetAutostart(s.Autostart, d.exe); err != nil {
-		log.Printf("设置开机自启失败: %v", err)
-	}
+	switch {
+	case !d.autostartKnown:
+		// 启动时：让注册表与设置一致。程序目录被移动后，这里会把失效的自启路径更新到当前位置；
+		// 但不会动别的副本（如已安装版）留下的有效条目。
+		if msg, err := winsys.SyncAutostart(d.exe, s.Autostart); err != nil {
+			log.Printf("同步开机自启失败: %v", err)
+		} else if msg != "" {
+			log.Print(msg)
+		}
+	case s.Autostart != d.lastAutostart:
+		// 用户在设置里明确切换了开机自启：强制写入 / 删除
+		if err := winsys.SetAutostart(s.Autostart, d.exe); err != nil {
+			log.Printf("设置开机自启失败: %v", err)
+		}
+	} // 其他设置（主题、字号…）被修改时不碰注册表
+	d.autostartKnown, d.lastAutostart = true, s.Autostart
 	if d.loop != nil {
 		d.registerHotkeys(s)
 	}

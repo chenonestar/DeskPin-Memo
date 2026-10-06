@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"deskpinmemo/internal/datadir"
+	"deskpinmemo/internal/regtrace"
 	"deskpinmemo/internal/scheduler"
 	"deskpinmemo/internal/service"
 	"deskpinmemo/internal/store"
@@ -513,6 +514,35 @@ func (a *App) ChangeDataDir(target, mode string) (service.DataDirChange, error) 
 func (a *App) RestartApp() error {
 	a.saveWindow()
 	return a.shell.Restart()
+}
+
+// ---------------------------------------------------------------- 系统注册表项
+
+// RegistryTraces 列出本程序写入当前用户注册表（HKCU）的项：开机自启、通知身份、deskpin:// 协议。
+func (a *App) RegistryTraces() []regtrace.Trace {
+	t := a.shell.RegistryTraces()
+	if t == nil {
+		t = []regtrace.Trace{}
+	}
+	return t
+}
+
+// ClearRegistryTraces 清除全部注册表项（删除绿色版文件夹前使用）。
+// 同时把「开机自启」设置改为关闭，否则下次启动会按设置重新写入。
+// 通知身份和协议是 Toast 必需的，程序再次启动时会重新写入。返回被删除的项。
+func (a *App) ClearRegistryTraces() ([]string, error) {
+	s := a.svc.GetSettings()
+	if s.Autostart {
+		s.Autostart = false
+		if _, err := a.svc.SaveSettings(s); err != nil {
+			return nil, err
+		}
+	}
+	removed, err := a.shell.ClearRegistry()
+	if removed == nil {
+		removed = []string{}
+	}
+	return removed, err
 }
 
 // ---------------------------------------------------------------- 杂项

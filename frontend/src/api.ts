@@ -2,7 +2,7 @@
 // - 在 Wails 中：调用 window.go.app.App.*（由 Wails 注入），事件走 window.runtime.EventsOn。
 // - 在浏览器开发/测试中：改用 Go 开发服务器的 /rpc 与 /events（SSE）。
 import type {
-  Bootstrap, DataDirChange, DataDirStatus, DirInfo, Overview, EncStatus, Group, GroupView, ImportInfo, ImportStats, Item, ItemPatch, NewItem,
+  Bootstrap, RegTrace, DataDirChange, DataDirStatus, DirInfo, Overview, EncStatus, Group, GroupView, ImportInfo, ImportStats, Item, ItemPatch, NewItem,
   Notification, QuickPreview, ReminderInput, Settings, Subtask, WindowState, WinMode,
 } from './types'
 
@@ -127,6 +127,8 @@ export const api = {
   inspectDataDir: (p: string) => call<DirInfo>('InspectDataDir', p),
   pickDataDir: () => call<string>('PickDataDir'),
   changeDataDir: (target: string, mode: string) => call<DataDirChange>('ChangeDataDir', target, mode),
+  registryTraces: () => call<RegTrace[]>('RegistryTraces'),
+  clearRegistryTraces: () => call<string[]>('ClearRegistryTraces'),
   restartApp: () => call<void>('RestartApp'),
   openDataDir: () => call<void>('OpenDataDir'),
   backupNow: () => call<string>('BackupNow'),

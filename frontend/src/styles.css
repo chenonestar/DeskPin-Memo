@@ -228,3 +228,7 @@ mark { background: rgba(255, 200, 0, 0.55); color: inherit; border-radius: 2px; 
 
 /* ---------- 鼠标穿透（FR-208）---------- */
 .ctbadge { font-size: 11px; line-height: 16px; padding: 0 6px; border-radius: 8px; background: var(--accent); color: #fff; margin-right: 2px; white-space: nowrap; }
+
+.reglist { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.reglist li { padding: 6px 8px; background: var(--bg-2); border-radius: 6px; font-size: 12px; }
+.reglist code { font-size: 11px; color: var(--fg-dim); word-break: break-all; }
