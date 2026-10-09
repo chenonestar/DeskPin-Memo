@@ -155,3 +155,141 @@ func TestClearRegistryTraces(t *testing.T) { // 绿色版：删除文件夹前�
 	}
 	_ = sh
 }
+
+// ---- 外观：默认颜色 / 透明度 / 鼠标离开变淡 ----
+
+func TestDefaultColorFollowsSettings(t *testing.T) { // 设置 → 外观 → 默认便签颜色
+	a, sh := newApp(t)
+	if _, err := a.ApplyWindow(); err != nil { // 首次显示会保存窗口位置（过去会把默认色写死）
+		t.Fatal(err)
+	}
+	a.saveWindow()
+	if sh.Background != "#FFF3B0" {
+		t.Fatalf("初始应使用默认色: %q", sh.Background)
+	}
+	s := a.GetSettings()
+	s.StickyColor = "#D9F2C9"
+	if _, err := a.SaveSettings(s); err != nil {
+		t.Fatal(err)
+	}
+	if sh.Background != "#D9F2C9" {
+		t.Fatalf("修改默认颜色后，没单独设置过颜色的便签应立刻跟随: %q", sh.Background)
+	}
+	if w, _ := a.svc.GetWindow(a.groupID); w.Color != "" {
+		t.Fatalf("窗口记录里不应写死默认色: %q", w.Color)
+	}
+	// 单独设置的颜色优先于默认值
+	a.SetWindowColor("#FFD9E4")
+	if sh.Background != "#FFD9E4" {
+		t.Fatal(sh.Background)
+	}
+	s.StickyColor = "#CFE8FF"
+	a.SaveSettings(s)
+	if sh.Background != "#FFD9E4" {
+		t.Fatal("单独设置过颜色的便签不应被默认色覆盖")
+	}
+	// 恢复默认外观后重新跟随
+	ws, err := a.ResetWindowAppearance()
+	if err != nil || ws.Color != "" || ws.Opacity != 0 || sh.Background != "#CFE8FF" {
+		t.Fatalf("%+v %v %q", ws, err, sh.Background)
+	}
+}
+
+func TestDefaultOpacityFollowsSettings(t *testing.T) {
+	a, sh := newApp(t)
+	a.ApplyWindow()
+	a.saveWindow()
+	if sh.Opacity != 1 {
+		t.Fatal(sh.Opacity)
+	}
+	s := a.GetSettings()
+	s.Opacity = 0.6
+	a.SaveSettings(s)
+	if sh.Opacity != 0.6 {
+		t.Fatalf("默认透明度变化应立刻生效: %v", sh.Opacity)
+	}
+	a.SetWindowOpacity(0.8) // 单独设置
+	if sh.Opacity != 0.8 {
+		t.Fatal(sh.Opacity)
+	}
+	s.Opacity = 0.4
+	a.SaveSettings(s)
+	if sh.Opacity != 0.8 {
+		t.Fatal("单独设置过的透明度不应被默认值覆盖")
+	}
+}
+
+func TestFadeOnLeaveUsesWindowOpacityNotBlackBackground(t *testing.T) {
+	a, sh := newApp(t)
+	sh.Native = true
+	a.ApplyWindow()
+	s := a.GetSettings()
+	s.FadeOnLeave = true
+	a.SaveSettings(s)
+	if ws, _ := a.ApplyWindow(); !ws.NativeOpacity {
+		t.Fatal("前端需要知道外壳处理窗口级透明度，以免再叠加 CSS opacity")
+	}
+	// 启动时假定鼠标不在便签上 → 已变淡
+	if sh.Opacity >= 1 || sh.Opacity < 0.25 {
+		t.Fatalf("启动时应为变淡状态: %v", sh.Opacity)
+	}
+	a.SetFaded(false) // 鼠标进入
+	if sh.Opacity != 1 {
+		t.Fatalf("鼠标在便签上应完全显示: %v", sh.Opacity)
+	}
+	a.SetFaded(true) // 鼠标离开
+	faded := sh.Opacity
+	if faded >= 1 || faded < 0.25 {
+		t.Fatal(faded)
+	}
+	// 关闭设置项后不再变淡
+	s.FadeOnLeave = false
+	a.SaveSettings(s)
+	if sh.Opacity != 1 {
+		t.Fatalf("关闭「鼠标离开后自动变淡」后应保持不透明: %v", sh.Opacity)
+	}
+	// 本身已经很透明的便签：变淡后不会比自身更不透明，也不低于 25%
+	for _, base := range []float64{1, 0.8, 0.5, 0.3} {
+		if f := fadedOpacity(base); f > base || f < 0.25 {
+			t.Errorf("fadedOpacity(%v) = %v", base, f)
+		}
+	}
+}
+
+func TestOverlaysAndAlertsForceOpaque(t *testing.T) {
+	a, sh := newApp(t)
+	sh.Native = true
+	s := a.GetSettings()
+	s.FadeOnLeave, s.Opacity = true, 0.5
+	a.SaveSettings(s)
+	a.ApplyWindow()
+	if sh.Opacity >= 0.5 {
+		t.Fatalf("应处于变淡状态: %v", sh.Opacity)
+	}
+	a.OpenSettings()
+	if sh.Opacity != 1 {
+		t.Fatalf("设置窗口打开期间必须不透明: %v", sh.Opacity)
+	}
+	if sh.Radius != 10 {
+		t.Fatalf("设置窗口圆角: %d", sh.Radius)
+	}
+	a.CloseSettings()
+	if sh.Opacity != 0.5 || sh.Radius != 8 { // 刚关闭：鼠标多半还在窗口上，不立刻变淡
+		t.Fatalf("关闭后恢复便签的透明度 / 圆角: %v %d", sh.Opacity, sh.Radius)
+	}
+	a.OpenQuick()
+	if sh.Opacity != 1 || sh.Radius != 12 {
+		t.Fatalf("快速输入框: %v %d", sh.Opacity, sh.Radius)
+	}
+	a.CloseQuick()
+	a.SetFaded(true)
+	n := scheduler.Notification{Title: "x", Strong: true}
+	a.ShowStrongAlert(n)
+	if sh.Opacity != 1 {
+		t.Fatalf("强提醒期间必须不透明: %v", sh.Opacity)
+	}
+	a.StrongAlertDone()
+	if sh.Opacity >= 0.5 {
+		t.Fatalf("强提醒处理完后恢复变淡: %v", sh.Opacity)
+	}
+}

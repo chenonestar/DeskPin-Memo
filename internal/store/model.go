@@ -122,10 +122,10 @@ type Window struct {
 	Width     int     `json:"width"`
 	Height    int     `json:"height"`
 	MonitorID string  `json:"monitorId"`
-	Opacity   float64 `json:"opacity"`
+	Opacity   float64 `json:"opacity"` // 0 = 跟随默认透明度（设置 → 外观）
 	Locked    bool    `json:"locked"`
 	Collapsed bool    `json:"collapsed"`
-	Color     string  `json:"color"`
+	Color     string  `json:"color"` // 空 = 跟随默认便签颜色
 	// ClickThrough 开启后便签只显示、不响应鼠标（FR-208）；按住 Ctrl 临时恢复交互。
 	ClickThrough bool `json:"clickThrough"`
 }

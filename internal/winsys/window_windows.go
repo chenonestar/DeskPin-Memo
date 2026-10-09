@@ -5,6 +5,7 @@ package winsys
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -26,11 +27,23 @@ type Shell struct {
 	quit     func()
 	loop     *Loop
 
-	// 鼠标穿透（FR-208）
-	ctMu   sync.Mutex
-	ct     bool                     // 功能是否开启（不含按住 Ctrl 的临时恢复）
-	ctOrig map[windows.HWND]uintptr // 修改前的扩展样式，关闭穿透时原样恢复
-	ctrlCh chan struct{}
+	// 窗口外观与鼠标穿透（FR-208）。
+	// ctMu 只保护下面几个简单字段，持锁期间绝不调用 Win32：SetWindowLongPtr 等会向窗口所属线程
+	// 同步发消息，而 UI 线程自己也可能正等这把锁，持锁调用会死锁。
+	ctMu          sync.Mutex
+	ct            bool          // 鼠标穿透功能是否开启（不含按住 Ctrl 的临时恢复）
+	alpha         byte          // 窗口级透明度 0–255
+	radius        int           // 圆角（DIP）
+	rgnW, rgnH    int           // 最近一次设置圆角区域时的窗口尺寸
+	brush         uintptr       // 我们创建的底色画刷
+	stopPoll      chan struct{} // 穿透开启期间的兜底检查
+	ctrlCh        chan struct{}
+	applying      atomic.Bool             // applyStyles 单飞：同一时刻只有一个 goroutine 在改样式
+	dirty         atomic.Bool             // 单飞期间又有新的调用：当前执行者结束后需要再应用一遍
+	lastOn        atomic.Bool             // 最近一次应用的「当前是否处于穿透」
+	ctState       map[windows.HWND]exBits // 仅在 applyStylesOnce 内访问（单飞，无需加锁）：我们加上的样式位
+	interactive   bool                    // 同上：穿透开启但按住 Ctrl 临时恢复交互
+	OnInteractive func(bool)              // 按住 Ctrl 临时恢复交互 / 松开时回调（前端据此显示状态）
 }
 
 // ErrPinFallback 表示「钉在桌面」不可用，已降级为「置底窗口」（10.1 风险应对）。
@@ -40,10 +53,10 @@ var _ app.Shell = (*Shell)(nil)
 
 // NewShell 创建外壳；quit 用于退出程序。窗口句柄稍后通过 Attach 绑定。
 func NewShell(quit func()) *Shell {
-	s := &Shell{quit: quit, mode: "desktop", ctOrig: map[windows.HWND]uintptr{}, ctrlCh: make(chan struct{}, 1)}
+	s := &Shell{quit: quit, mode: "desktop", ctState: map[windows.HWND]exBits{}, alpha: 255, ctrlCh: make(chan struct{}, 1)}
 	go func() {
 		for range s.ctrlCh { // 串行处理 Ctrl 状态变化；以实际按键状态为准，不依赖事件顺序
-			s.refreshClickThrough()
+			s.applyStyles()
 		}
 	}()
 	return s
@@ -244,6 +257,7 @@ func (s *Shell) SetBounds(r app.Rect) {
 		x, y = x-int(pr.Left), y-int(pr.Top)
 	}
 	pMoveWindow.Call(uintptr(h), uintptr(x), uintptr(y), uintptr(r.W), uintptr(r.H), 1)
+	s.applyRegion()
 }
 
 func (s *Shell) moveResize(r app.Rect) {
@@ -254,6 +268,7 @@ func (s *Shell) moveResize(r app.Rect) {
 		x, y = x-int(pr.Left), y-int(pr.Top)
 	}
 	pMoveWindow.Call(uintptr(h), uintptr(x), uintptr(y), uintptr(r.W), uintptr(r.H), 1)
+	s.applyRegion()
 }
 
 func (s *Shell) Scale() float64 {
@@ -477,19 +492,152 @@ func (s *Shell) PickFile(save bool, title, defaultName, pattern string) (string,
 	return windows.UTF16ToString(buf), nil
 }
 
-// ---- 鼠标穿透（FR-208）----
+// ---- 窗口外观与鼠标穿透（FR-208）----
 
-// SetClickThrough 开启 / 关闭鼠标穿透。开启后窗口（含 WebView2 的全部子窗口）带上
-// WS_EX_LAYERED|WS_EX_TRANSPARENT，鼠标点击落到下面的窗口；按住 Ctrl 时临时恢复交互。
-// Ctrl 状态通过后台原始输入（RIDEV_INPUTSINK）事件驱动检测，没有轮询，空闲时不占 CPU（NFR-03）。
+// exBits 记录哪些扩展样式位是我们加上的。关闭时只撤销这些位——
+// 不再「还原到最初的整个样式值」，那样会把 Wails / 系统之后加上的位一并抹掉。
+type exBits struct{ layered, transparent bool }
+
+// NativeOpacity 表示透明度由窗口级 alpha 处理：前端不应再叠加 CSS opacity。
+// （Wails 窗口本身不透明，背景是画刷；CSS opacity 只会让便签颜色叠在黑色背景上变暗。）
+func (s *Shell) NativeOpacity() bool { return true }
+
+// SetOpacity 设置窗口级透明度（0.3–1）。WS_EX_LAYERED + LWA_ALPHA 对整个窗口含 WebView2 子窗口生效。
+func (s *Shell) SetOpacity(o float64) {
+	if o < 0.05 {
+		o = 0.05
+	}
+	if o > 1 {
+		o = 1
+	}
+	a := byte(o*255 + 0.5)
+	s.ctMu.Lock()
+	changed := s.alpha != a
+	s.alpha = a
+	s.ctMu.Unlock()
+	if changed {
+		s.applyStyles()
+	}
+}
+
+// SetBackground 设置窗口底色（#RRGGBB）：缩放、刷新时露出的是这个颜色而不是黑色。
+func (s *Shell) SetBackground(hex string) {
+	h := s.HWND()
+	if h == 0 || len(hex) != 7 || hex[0] != '#' {
+		return
+	}
+	var r, g, b uint8
+	if _, err := fmt.Sscanf(hex[1:], "%02x%02x%02x", &r, &g, &b); err != nil {
+		return
+	}
+	br, _, _ := pCreateSolidBrush.Call(uintptr(r) | uintptr(g)<<8 | uintptr(b)<<16)
+	if br == 0 {
+		return
+	}
+	old, _, _ := pSetClassLongPtrW.Call(uintptr(h), ^uintptr(9), br) // GCLP_HBRBACKGROUND = -10
+	s.ctMu.Lock()
+	prev := s.brush
+	s.brush = br
+	s.ctMu.Unlock()
+	if prev != 0 && prev == old {
+		pDeleteObject.Call(prev) // 只释放我们自己创建的旧画刷
+	}
+	pInvalidateRect.Call(uintptr(h), 0, 1)
+}
+
+// SetCornerRadius 用窗口区域把四个角裁成圆角（DIP）。窗口本身不透明，无法靠 CSS 做出透明的圆角。
+func (s *Shell) SetCornerRadius(dip int) {
+	s.ctMu.Lock()
+	s.radius = dip
+	s.rgnW, s.rgnH = 0, 0 // 强制重建
+	s.ctMu.Unlock()
+	s.applyRegion()
+}
+
+func (s *Shell) applyRegion() {
+	h := s.HWND()
+	if h == 0 {
+		return
+	}
+	r := getWindowRect(h)
+	w, hh := int(r.Right-r.Left), int(r.Bottom-r.Top)
+	s.ctMu.Lock()
+	rad := s.radius
+	if w == s.rgnW && hh == s.rgnH {
+		s.ctMu.Unlock()
+		return
+	}
+	s.rgnW, s.rgnH = w, hh
+	s.ctMu.Unlock()
+	if rad <= 0 || w <= 0 || hh <= 0 {
+		pSetWindowRgn.Call(uintptr(h), 0, 1)
+		return
+	}
+	d := int(float64(rad)*s.Scale()) * 2
+	rgn, _, _ := pCreateRoundRectRgn.Call(0, 0, uintptr(w+1), uintptr(hh+1), uintptr(d), uintptr(d))
+	if rgn == 0 {
+		return
+	}
+	if ok, _, _ := pSetWindowRgn.Call(uintptr(h), rgn, 1); ok == 0 {
+		pDeleteObject.Call(rgn) // 设置成功后区域归系统所有；失败才需要自己释放
+	}
+}
+
+// SetClickThrough 开启 / 关闭鼠标穿透。开启后窗口带上 WS_EX_LAYERED|WS_EX_TRANSPARENT，
+// 鼠标点击落到下面的窗口；按住 Ctrl 时临时恢复交互。
+//
+// 检测 Ctrl 有两条互相独立的路径，任何一条都够用：
+//  1. 键盘原始输入（RIDEV_INPUTSINK，WM_INPUT）：事件驱动，Ctrl 一按下 / 抬起立刻响应；
+//  2. 开启期间每 200ms 比对一次「期望状态」与「已应用状态」的兜底：只在功能开启时才存在，
+//     每次只读一个按键状态，几乎不占 CPU；原始输入即使因系统原因收不到事件，状态也会收敛。
 func (s *Shell) SetClickThrough(on bool) {
 	s.ctMu.Lock()
 	s.ct = on
+	running := s.stopPoll != nil
 	s.ctMu.Unlock()
 	if s.loop != nil {
 		s.loop.WatchCtrl(on)
 	}
-	s.refreshClickThrough()
+	switch {
+	case on && !running:
+		s.startPoll()
+	case !on && running:
+		s.stopPolling()
+	}
+	s.applyStyles()
+}
+
+func (s *Shell) startPoll() {
+	stop := make(chan struct{})
+	s.ctMu.Lock()
+	s.stopPoll = stop
+	s.ctMu.Unlock()
+	go func() {
+		t := time.NewTicker(200 * time.Millisecond)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				s.ctMu.Lock()
+				ct := s.ct
+				s.ctMu.Unlock()
+				if want := ct && !keyDown(vkControl); want != s.lastOn.Load() {
+					s.applyStyles()
+				}
+			}
+		}
+	}()
+}
+
+func (s *Shell) stopPolling() {
+	s.ctMu.Lock()
+	if s.stopPoll != nil {
+		close(s.stopPoll)
+		s.stopPoll = nil
+	}
+	s.ctMu.Unlock()
 }
 
 // OnCtrl 由消息循环在 Ctrl 键按下 / 抬起时调用。
@@ -500,14 +648,22 @@ func (s *Shell) OnCtrl() {
 	}
 }
 
-func (s *Shell) refreshClickThrough() {
-	s.ctMu.Lock()
-	want := s.ct
-	s.ctMu.Unlock()
-	s.applyTransparent(want && !keyDown(vkControl))
+// applyStyles 根据「穿透开关 / Ctrl 状态 / 透明度」重新计算并应用窗口扩展样式。幂等、单飞：
+// 如果已有 goroutine 正在应用，这里只留下「需要再来一遍」的标记就返回，由那个 goroutine 负责补跑。
+func (s *Shell) applyStyles() {
+	s.dirty.Store(true)
+	for s.dirty.Load() {
+		if !s.applying.CompareAndSwap(false, true) {
+			return
+		}
+		for s.dirty.Swap(false) {
+			s.applyStylesOnce()
+		}
+		s.applying.Store(false)
+	}
 }
 
-func (s *Shell) applyTransparent(on bool) {
+func (s *Shell) applyStylesOnce() {
 	root := s.HWND()
 	if root == 0 {
 		return
@@ -520,30 +676,63 @@ func (s *Shell) applyTransparent(on bool) {
 	pEnumChildWindows.Call(uintptr(root), cb, 0)
 
 	s.ctMu.Lock()
-	defer s.ctMu.Unlock()
-	for h := range s.ctOrig { // 清理已销毁窗口的记录（句柄可能被复用）
+	ct, alpha := s.ct, s.alpha
+	s.ctMu.Unlock()
+	ctrl := keyDown(vkControl)
+	on := ct && !ctrl
+	interactive := ct && ctrl
+	for h := range s.ctState { // 清理已销毁窗口的记录（句柄可能被复用）
 		if ok, _, _ := pIsWindow.Call(uintptr(h)); ok == 0 {
-			delete(s.ctOrig, h)
+			delete(s.ctState, h)
 		}
 	}
+	changed, failed := 0, 0
 	for _, h := range targets {
+		isRoot := h == root
+		wantTransparent := on
+		wantLayered := on || (isRoot && alpha < 255)
 		ex := getWindowLong(h, gwlExStyle)
-		if _, seen := s.ctOrig[h]; !seen {
-			s.ctOrig[h] = ex
+		st := s.ctState[h]
+		nx := ex
+		if wantTransparent && nx&wsExTransparent == 0 {
+			nx |= wsExTransparent
+			st.transparent = true
+		} else if !wantTransparent && st.transparent {
+			nx &^= wsExTransparent
+			st.transparent = false
 		}
-		if on {
-			if ex&wsExTransparent != 0 && ex&wsExLayered != 0 {
-				continue
-			}
-			setWindowLong(h, gwlExStyle, ex|wsExLayered|wsExTransparent)
-			pSetLayeredWindowAttributes.Call(uintptr(h), 0, 255, lwaAlpha) // 完全不透明；没有这一句分层窗口不会显示
-		} else {
-			orig := s.ctOrig[h]
-			if ex == orig {
-				continue
-			}
-			setWindowLong(h, gwlExStyle, orig)
+		if wantLayered && nx&wsExLayered == 0 {
+			nx |= wsExLayered
+			st.layered = true
+		} else if !wantLayered && st.layered {
+			nx &^= wsExLayered
+			st.layered = false
 		}
-		pSetWindowPos.Call(uintptr(h), 0, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoZOrder|swpNoActivate|swpFrameChanged)
+		s.ctState[h] = st
+		if nx != ex {
+			setWindowLong(h, gwlExStyle, nx)
+			if getWindowLong(h, gwlExStyle) != nx {
+				failed++ // 其他进程拥有的窗口（WebView2 的部分子窗口）不允许修改样式；根窗口生效即可
+			} else {
+				changed++
+			}
+			pSetWindowPos.Call(uintptr(h), 0, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoZOrder|swpNoActivate|swpFrameChanged)
+		}
+		if isRoot && getWindowLong(h, gwlExStyle)&wsExLayered != 0 {
+			if ok, _, err := pSetLayeredWindowAttributes.Call(uintptr(h), 0, uintptr(alpha), lwaAlpha); ok == 0 {
+				log.Printf("SetLayeredWindowAttributes 失败: %v", err)
+			}
+		}
+	}
+	if on != s.lastOn.Load() || interactive != s.interactive {
+		log.Printf("窗口样式：鼠标穿透=%v（功能开启=%v，Ctrl=%v），窗口 %d 个，样式已修改 %d、被系统拒绝 %d，根窗口扩展样式=%#x，透明度=%d",
+			on, ct, ctrl, len(targets), changed, failed, getWindowLong(root, gwlExStyle), alpha)
+	}
+	s.lastOn.Store(on)
+	if interactive != s.interactive {
+		s.interactive = interactive
+		if cb := s.OnInteractive; cb != nil {
+			go cb(interactive)
+		}
 	}
 }

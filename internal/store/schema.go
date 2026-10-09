@@ -6,7 +6,7 @@ import (
 )
 
 // CurrentSchemaVersion 为数据库结构版本（NFR-11）。
-const CurrentSchemaVersion = 3
+const CurrentSchemaVersion = 4
 
 // 时间一律以 UTC 毫秒时间戳（INTEGER）存储，显示时按本地时区转换。
 // hlc / device_id / field_hlc / deleted 为 V3 同步预留字段，V1 建表即创建并维护。
@@ -125,6 +125,11 @@ CREATE INDEX idx_subtasks_hlc  ON subtasks(hlc);
 `,
 	// v3：便签窗口鼠标穿透（FR-208）。windows 表为设备相关状态，不含同步字段。
 	`ALTER TABLE windows ADD COLUMN click_through INTEGER NOT NULL DEFAULT 0;`,
+	// v4：窗口的颜色 / 透明度改为「空值 = 跟随设置里的默认值」。
+	// 之前第一次保存窗口位置时会把当时的默认值写死进记录，之后修改默认值对已有便签无效。
+	// 把等于旧默认值的记录还原为「跟随默认」；用户明确选过的其他颜色 / 透明度保持不变。
+	`UPDATE windows SET color='' WHERE lower(color)='#fff3b0' OR color='';
+UPDATE windows SET opacity=0 WHERE opacity>=0.999;`,
 }
 
 func migrate(db *sql.DB, backup func() error) error {

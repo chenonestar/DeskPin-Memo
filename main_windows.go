@@ -94,12 +94,14 @@ func main() {
 		Frameless:         true,
 		StartHidden:       true,
 		HideWindowOnClose: true,
-		BackgroundColour:  &options.RGBA{R: 0, G: 0, B: 0, A: 0},
-		AssetServer:       &assetserver.Options{Assets: assets},
-		Bind:              []interface{}{a},
-		OnStartup:         d.startup,
-		OnDomReady:        d.domReady,
-		OnShutdown:        d.shutdown,
+		// 窗口底色（画刷）：启动和缩放时露出的颜色。默认便签黄，之后随便签颜色更新。
+		// 注意窗口并不透明（WindowIsTranslucent 关闭），透明度由 winsys 用窗口级 alpha 实现。
+		BackgroundColour: &options.RGBA{R: 0xFF, G: 0xF3, B: 0xB0, A: 255},
+		AssetServer:      &assetserver.Options{Assets: assets},
+		Bind:             []interface{}{a},
+		OnStartup:        d.startup,
+		OnDomReady:       d.domReady,
+		OnShutdown:       d.shutdown,
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId:               "9b6f3c1e-0d55-4d0a-9d0e-DeskPinMemo",
 			OnSecondInstanceLaunch: d.secondInstance, // NFR-07：重复启动时激活已有实例
@@ -154,6 +156,8 @@ func (d *daemon) init(ctx context.Context) {
 	}
 	sh := winsys.NewShell(func() { runtime.Quit(ctx) })
 	sh.Attach(h)
+	// Ctrl 临时恢复交互时通知前端（标题栏徽标变化），既是反馈也便于确认 Ctrl 检测是否生效
+	sh.OnInteractive = func(on bool) { d.svc.Emit("window:interactive", on) }
 	d.shell = sh
 	d.app.SetShell(sh)
 

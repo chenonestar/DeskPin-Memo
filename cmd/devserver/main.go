@@ -74,7 +74,8 @@ func main() {
 		log.Fatal(err)
 	}
 	h := &hub{subs: map[chan []byte]struct{}{}}
-	a := app.New(svc, &app.NopShell{R: app.Rect{X: 100, Y: 100, W: 300, H: 420}, Mode: "desktop"}, "dev")
+	shell := &app.NopShell{R: app.Rect{X: 100, Y: 100, W: 300, H: 420}, Mode: "desktop"}
+	a := app.New(svc, shell, "dev")
 	svc.Emit, a.Emit = h.emit, h.emit
 	sched := scheduler.New(scheduler.Config{Source: st, Notifier: devNotifier{h}, DND: svc.DND,
 		StrongEnabled: func() bool { return svc.GetSettings().StrongReminder },
@@ -134,6 +135,26 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"result": result})
+	})
+	// 仅供端到端测试：查看 / 切换模拟外壳的状态，并让「外壳」主动向前端发事件
+	mux.HandleFunc("/__dev/shell", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var in struct {
+				Native *bool `json:"native"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			if in.Native != nil {
+				shell.Native = *in.Native
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"native": shell.Native, "opacity": shell.Opacity,
+			"background": shell.Background, "radius": shell.Radius, "clickThrough": shell.ClickThrough})
+	})
+	mux.HandleFunc("/__dev/emit", func(w http.ResponseWriter, r *http.Request) {
+		var v any
+		_ = json.Unmarshal([]byte(r.URL.Query().Get("data")), &v)
+		h.emit(r.URL.Query().Get("event"), v)
 	})
 	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
 		fl, ok := w.(http.Flusher)

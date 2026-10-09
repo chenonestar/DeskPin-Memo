@@ -31,6 +31,7 @@ type App struct {
 	quick   *quickSaved // 快速输入框 / 设置窗口打开期间保存的便签窗口状态
 	overlay string      // "quick" | "settings" | ""
 	alerts  int         // 尚未处理的强提醒数量（期间需要鼠标交互，暂停鼠标穿透）
+	faded   bool        // 鼠标是否不在便签上（「鼠标离开后自动变淡」）；启动时假定鼠标不在
 	Version string
 	Emit    func(event string, data any)
 }
@@ -43,7 +44,7 @@ type quickSaved struct {
 
 // New 创建 App。
 func New(svc *service.Service, shell Shell, version string) *App {
-	a := &App{svc: svc, shell: shell, Version: version, Emit: func(string, any) {}}
+	a := &App{svc: svc, shell: shell, Version: version, Emit: func(string, any) {}, faded: true}
 	a.groupID, _ = svc.Store().InboxID()
 	return a
 }
@@ -135,7 +136,11 @@ func (a *App) DeleteGroup(id string) error {
 
 func (a *App) GetSettings() service.Settings { return a.svc.GetSettings() }
 func (a *App) SaveSettings(s service.Settings) (service.Settings, error) {
-	return a.svc.SaveSettings(s)
+	out, err := a.svc.SaveSettings(s)
+	if err == nil {
+		a.applyAppearance() // 默认颜色 / 透明度 / 自动变淡变化后立刻作用到所有跟随默认的便签
+	}
+	return out, err
 }
 
 // ---------------------------------------------------------------- 便签窗口
@@ -144,6 +149,8 @@ func (a *App) SaveSettings(s service.Settings) (service.Settings, error) {
 type WindowState struct {
 	store.Window
 	Visible bool `json:"visible"`
+	// NativeOpacity：外壳用窗口级 alpha 处理透明度 / 变淡，前端不要再叠加 CSS opacity。
+	NativeOpacity bool `json:"nativeOpacity"`
 }
 
 // CurrentGroup 返回便签当前显示的分组。
@@ -175,8 +182,90 @@ func (a *App) ApplyWindow() (WindowState, error) {
 	}
 	a.shell.SetBounds(r) // 外壳负责把不存在屏幕上的位置拉回主屏（AC-12）
 	_ = a.shell.SetMode(w.Mode)
+	a.applyEffects()
+	return WindowState{Window: w, Visible: a.shell.Visible(), NativeOpacity: a.shell.NativeOpacity()}, nil
+}
+
+// 圆角（DIP）：便签 8（需求书 4.1），叠加界面各自与页面里的卡片圆角一致。
+func (a *App) cornerRadius() int {
+	switch a.overlay {
+	case "quick":
+		return 12
+	case "settings", "overview":
+		return 10
+	}
+	return 8
+}
+
+// applyEffects 把窗口的「外观 + 穿透」状态应用到外壳：透明度 / 变淡、底色、圆角、鼠标穿透。
+func (a *App) applyEffects() {
+	a.applyAppearance()
 	a.applyClickThrough()
-	return WindowState{Window: w, Visible: a.shell.Visible()}, nil
+}
+
+// resolvedAppearance 返回便签实际使用的颜色与透明度：窗口自己没设置（空 / 0）就跟随设置里的默认值。
+func (a *App) resolvedAppearance() (color string, opacity float64) {
+	st := a.svc.GetSettings()
+	color, opacity = st.StickyColor, st.Opacity
+	if w, err := a.svc.GetWindow(a.groupID); err == nil {
+		if w.Color != "" {
+			color = w.Color
+		}
+		if w.Opacity > 0 {
+			opacity = w.Opacity
+		}
+	}
+	return
+}
+
+// fadedOpacity 是「鼠标离开后变淡」时的透明度：约为当前的一半，但不高于当前值、不低于 25%。
+func fadedOpacity(base float64) float64 {
+	f := base * 0.45
+	if f < 0.25 {
+		f = 0.25
+	}
+	if f > base {
+		f = base
+	}
+	return f
+}
+
+// applyAppearance 用窗口级透明度实现「透明度」与「鼠标离开后自动变淡」（FR-205）。
+// 快速输入框 / 设置 / 概览 / 强提醒打开期间一律不透明，保证看得清、点得到。
+func (a *App) applyAppearance() {
+	color, opacity := a.resolvedAppearance()
+	eff := opacity
+	switch {
+	case a.quick != nil || a.alerts > 0:
+		eff = 1
+	case a.faded && a.svc.GetSettings().FadeOnLeave:
+		eff = fadedOpacity(opacity)
+	}
+	a.shell.SetOpacity(eff)
+	if color != "" {
+		a.shell.SetBackground(color)
+	}
+	a.shell.SetCornerRadius(a.cornerRadius())
+}
+
+// SetFaded 前端在鼠标进入 / 离开便签时调用（仅 NativeOpacity 时）。
+func (a *App) SetFaded(faded bool) {
+	if a.faded == faded {
+		return
+	}
+	a.faded = faded
+	a.applyAppearance()
+}
+
+// ResetWindowAppearance 恢复「跟随默认」：清除这个便签单独设置的颜色和透明度。
+func (a *App) ResetWindowAppearance() (WindowState, error) {
+	w, _ := a.svc.GetWindow(a.groupID)
+	w.Color, w.Opacity = "", 0
+	if _, err := a.svc.SaveWindow(w); err != nil {
+		return WindowState{}, err
+	}
+	a.applyAppearance()
+	return a.windowState()
 }
 
 // applyClickThrough 把「是否鼠标穿透」应用到窗口。快速输入框、设置窗口、每日概览和强提醒
@@ -196,7 +285,7 @@ func (a *App) SetClickThrough(on bool) (WindowState, error) {
 	if _, err := a.svc.SaveWindow(w); err != nil {
 		return WindowState{}, err
 	}
-	a.applyClickThrough()
+	a.applyEffects()
 	ws, err := a.windowState()
 	if err == nil {
 		a.Emit("window:state", ws)
@@ -221,7 +310,7 @@ func (a *App) StrongAlertDone() {
 	if a.alerts > 0 {
 		a.alerts--
 	}
-	a.applyClickThrough()
+	a.applyEffects()
 }
 
 func (a *App) effectiveHeight(w store.Window, sc float64) int {
@@ -269,7 +358,7 @@ func (a *App) SetWindowMode(mode string) (WindowState, error) {
 
 func (a *App) windowState() (WindowState, error) {
 	w, err := a.svc.GetWindow(a.groupID)
-	return WindowState{Window: w, Visible: a.shell.Visible()}, err
+	return WindowState{Window: w, Visible: a.shell.Visible(), NativeOpacity: a.shell.NativeOpacity()}, err
 }
 
 // SetWindowLocked 锁定 / 解锁位置（FR-204）。
@@ -289,6 +378,8 @@ func (a *App) SetWindowOpacity(opacity float64) (WindowState, error) {
 	if _, err := a.svc.SaveWindow(w); err != nil {
 		return WindowState{}, err
 	}
+	a.faded = false // 用户正在调整：立刻看到真实效果
+	a.applyAppearance()
 	return a.windowState()
 }
 
@@ -299,6 +390,7 @@ func (a *App) SetWindowColor(color string) (WindowState, error) {
 	if _, err := a.svc.SaveWindow(w); err != nil {
 		return WindowState{}, err
 	}
+	a.applyAppearance()
 	return a.windowState()
 }
 
@@ -362,6 +454,7 @@ func (a *App) openOverlay(kind string, w, h int, topFraction bool) {
 		}
 	}
 	a.overlay = kind
+	a.faded = false
 	area, sc := a.shell.CursorMonitorArea(), a.shell.Scale()
 	pw, ph := int(float64(w)*sc), int(float64(h)*sc)
 	y := area.Y + (area.H-ph)/2
@@ -370,7 +463,7 @@ func (a *App) openOverlay(kind string, w, h int, topFraction bool) {
 	}
 	a.shell.SetBounds(Rect{X: area.X + (area.W-pw)/2, Y: y, W: pw, H: ph})
 	_ = a.shell.SetMode("top")
-	a.applyClickThrough() // a.quick 已设置 → 暂时关闭穿透
+	a.applyEffects() // a.quick 已设置 → 暂时关闭穿透
 	a.shell.SetVisible(true)
 	a.shell.Focus()
 }
@@ -381,10 +474,11 @@ func (a *App) closeOverlay() {
 		return
 	}
 	a.quick, a.overlay = nil, ""
+	a.faded = false // 刚关闭叠加界面，鼠标多半还在窗口上；之后移出会自然变淡
 	a.shell.SetBounds(q.bounds)
 	_ = a.shell.SetMode(q.mode)
 	a.shell.SetVisible(q.visible)
-	a.applyClickThrough()
+	a.applyEffects()
 }
 
 // OpenQuick 唤出快速输入框：窗口临时变为置顶、居中偏上的 560 px 宽输入条（4.2）。
@@ -566,7 +660,7 @@ func (a *App) ShowStrongAlert(n scheduler.Notification) {
 		_ = a.shell.SetMode("top")
 	}
 	a.alerts++
-	a.applyClickThrough() // 强提醒必须手动处理，期间暂停穿透
+	a.applyEffects() // 强提醒必须手动处理，期间暂停穿透
 	sound := a.svc.GetSettings().Sound
 	if sound {
 		a.shell.Beep()

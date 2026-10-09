@@ -341,3 +341,45 @@ func TestMigrateV2ToV3ClickThrough(t *testing.T) {
 		t.Fatalf("迁移前应自动备份: %v", b)
 	}
 }
+
+// v3 → v4：窗口颜色 / 透明度「空值 = 跟随默认」。等于旧默认值的记录还原为跟随，用户明确选过的保留。
+func TestMigrateV3ToV4FollowDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "data.db")
+	raw, _ := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	for i := 0; i < 3; i++ {
+		if _, err := raw.Exec(migrations[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw.Exec(`PRAGMA user_version = 3`)
+	raw.Exec(`INSERT INTO meta(key,value) VALUES('device_id','0190a1b2-c3d4-7000-8000-000000000000')`)
+	for _, g := range []string{"g1", "g2", "g3"} {
+		raw.Exec(`INSERT INTO groups(id,name,color,sort_order,is_default,hlc,device_id,field_hlc) VALUES(?, ?, '', 1, ?, '1','d','{}')`, g, g, map[string]int{"g1": 1}[g])
+	}
+	raw.Exec(`INSERT INTO windows(id,group_id,color,opacity) VALUES('w1','g1','#FFF3B0',1)`)   // 旧版本写死的默认值
+	raw.Exec(`INSERT INTO windows(id,group_id,color,opacity) VALUES('w2','g2','#D9F2C9',0.6)`) // 用户明确选的
+	raw.Exec(`INSERT INTO windows(id,group_id,color,opacity) VALUES('w3','g3','#fff3b0',1)`)   // 大小写不同的默认色
+	raw.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	w1, _ := s.GetWindowByGroup("g1")
+	w2, _ := s.GetWindowByGroup("g2")
+	w3, _ := s.GetWindowByGroup("g3")
+	if w1.Color != "" || w1.Opacity != 0 || w3.Color != "" {
+		t.Fatalf("写死的默认值应还原为「跟随默认」: %+v %+v", w1, w3)
+	}
+	if w2.Color != "#D9F2C9" || w2.Opacity != 0.6 {
+		t.Fatalf("用户明确设置的值应保留: %+v", w2)
+	}
+	// 0 保持为 0，不会被钳到 30%
+	w1.X = 5
+	got, _ := s.SaveWindow(w1)
+	if got.Opacity != 0 {
+		t.Fatalf("SaveWindow 不应把「跟随默认」(0) 钳成 0.3: %v", got.Opacity)
+	}
+}

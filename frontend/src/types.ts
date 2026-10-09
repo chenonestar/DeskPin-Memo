@@ -146,6 +146,8 @@ export interface WindowState {
   color: string
   clickThrough: boolean
   visible: boolean
+  /** 外壳用窗口级 alpha 处理透明度 / 变淡：前端不要再叠加 CSS opacity（否则便签颜色会叠在黑色窗口底色上变黑） */
+  nativeOpacity: boolean
 }
 
 export interface QuickPreview {

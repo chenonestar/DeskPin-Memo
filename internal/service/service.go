@@ -718,8 +718,8 @@ func (s *Service) DeleteGroup(id string) error {
 func (s *Service) GetWindow(groupID string) (store.Window, error) {
 	w, err := s.st.GetWindowByGroup(groupID)
 	if err != nil {
-		st := s.GetSettings()
-		return store.Window{GroupID: groupID, Mode: "desktop", Width: 300, Height: 420, Opacity: st.Opacity, Color: st.StickyColor}, nil
+		// 颜色 / 透明度留空 = 跟随设置里的默认值，这样之后修改默认值会立刻作用到所有没单独设置过的便签
+		return store.Window{GroupID: groupID, Mode: "desktop", Width: 300, Height: 420}, nil
 	}
 	return w, nil
 }

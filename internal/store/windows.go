@@ -46,11 +46,14 @@ func (s *Store) SaveWindow(w Window) (Window, error) {
 	if w.Mode == "" {
 		w.Mode = "desktop"
 	}
-	if w.Opacity < 0.3 {
-		w.Opacity = 0.3
-	}
-	if w.Opacity > 1 {
-		w.Opacity = 1
+	// 0 表示「跟随设置里的默认透明度」；其余限制在 30%–100%
+	if w.Opacity != 0 {
+		if w.Opacity < 0.3 {
+			w.Opacity = 0.3
+		}
+		if w.Opacity > 1 {
+			w.Opacity = 1
+		}
 	}
 	err := s.Tx(func(tx *sql.Tx) error {
 		if w.ID == "" {

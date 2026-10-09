@@ -21,6 +21,13 @@ type Shell interface {
 	// BeginDrag / BeginResize 由前端标题栏 / 缩放柄触发，直到鼠标释放；onEnd 用于保存位置。
 	BeginDrag(onEnd func())
 	BeginResize(minW, minH, maxW, maxH int, onEnd func())
+	// 窗口外观。Wails 窗口本身是不透明的（背景画刷 + 透明的网页），所以透明度必须用窗口级 alpha，
+	// 不能用 CSS opacity（那样便签颜色会叠在黑色窗口背景上，看起来变黑）。
+	// NativeOpacity 为 true 表示外壳自己处理透明度，前端不要再用 CSS。
+	NativeOpacity() bool
+	SetOpacity(o float64)     // 0.3–1
+	SetBackground(hex string) // 窗口底色（#RRGGBB），避免缩放 / 刷新时露出黑色
+	SetCornerRadius(dip int)  // 窗口圆角（用窗口区域裁剪，不依赖透明）；0 = 直角
 	// SetClickThrough 让窗口对鼠标透明（FR-208）；on 为 true 时按住 Ctrl 会临时恢复交互。
 	SetClickThrough(on bool)
 	SetVisible(v bool)
@@ -50,6 +57,10 @@ type NopShell struct {
 	Hidden       bool
 	Overdue      int
 	Restarted    bool
+	Native       bool    // 模拟「外壳处理窗口级透明度」
+	Opacity      float64 // 最近一次 SetOpacity
+	Background   string
+	Radius       int
 	reg          *regtrace.MemRegistry // 模拟的注册表（开发服务器 / 测试）
 	ClickThrough bool
 }
@@ -65,6 +76,10 @@ func (n *NopShell) Visible() bool                                         { retu
 func (n *NopShell) Focus()                                                {}
 func (n *NopShell) CursorMonitorArea() Rect                               { return Rect{0, 0, 1920, 1040} }
 func (n *NopShell) PickFile(bool, string, string, string) (string, error) { return "", nil }
+func (n *NopShell) NativeOpacity() bool                                   { return n.Native }
+func (n *NopShell) SetOpacity(o float64)                                  { n.Opacity = o }
+func (n *NopShell) SetBackground(h string)                                { n.Background = h }
+func (n *NopShell) SetCornerRadius(d int)                                 { n.Radius = d }
 func (n *NopShell) SetClickThrough(on bool)                               { n.ClickThrough = on }
 func (n *NopShell) PickFolder(string) (string, error)                     { return "", nil }
 func (n *NopShell) Restart() error                                        { n.Restarted = true; return nil }

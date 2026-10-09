@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { api } from '../api'
+import { api, on } from '../api'
 import type { Group, Item, Settings, WindowState, WinMode } from '../types'
 import { t } from '../i18n/zh-CN'
 import { useDataVersion, useDebounced, useSnack } from '../hooks'
@@ -54,6 +54,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
   const [draft, setDraft] = useState('')
   const [preview, setPreview] = useState<QuickPreview | null>(null)
   const [hovered, setHovered] = useState(false)
+  const [ctrlLive, setCtrlLive] = useState(false) // 鼠标穿透开启期间按住 Ctrl：临时可操作
   const [lingering, setLingering] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const { snack, show, hide } = useSnack()
@@ -98,6 +99,8 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
   }, [view, dq])
 
   useEffect(() => { void load() }, [load, version])
+  useEffect(() => on('window:interactive', (v) => setCtrlLive(!!v)), [])
+  useEffect(() => { if (!win?.clickThrough) setCtrlLive(false) }, [win?.clickThrough])
 
   // ---- 操作 ----
   const toggle = useCallback(async (item: Item) => {
@@ -216,7 +219,8 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
 
   const mainMenu = (e: MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    const opacity = win?.opacity ?? settings.opacity
+    const opacity = win?.opacity || settings.opacity // 0 / 空 = 跟随设置里的默认值
+    const curColor = win?.color || settings.stickyColor
     const entries: MenuEntry[] = [
       { kind: 'item', label: t('search') + '  Ctrl+F', onClick: () => { setView({ kind: 'search' }); setTimeout(() => searchRef.current?.focus(), 0) } },
       { kind: 'item', label: t('trash'), onClick: () => setView({ kind: 'trash' }) },
@@ -239,9 +243,10 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
         </div>) },
       { kind: 'custom', node: (
         <div className="swatches" role="group" aria-label={t('color')}>
-          {COLORS.map((c) => <button key={c} className={`swatch ${win?.color === c ? 'on' : ''}`} style={{ background: c }} aria-label={c}
+          {COLORS.map((c) => <button key={c} className={`swatch ${curColor.toLowerCase() === c.toLowerCase() ? 'on' : ''}`} style={{ background: c }} aria-label={c}
             onClick={async () => setWin(await api.setWindowColor(c))} />)}
         </div>) },
+      { kind: 'item', label: t('resetAppearance'), onClick: async () => setWin(await api.resetWindowAppearance()) },
       { kind: 'sep' },
     ]
     if (group && !group.isDefault) {
@@ -322,15 +327,19 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
     view.kind === 'search' ? t('search') : t('trash')
 
   const style = {
+    // 窗口自己没单独设置颜色 / 透明度（空 / 0）时跟随设置里的默认值
     '--sticky-bg': win?.color || settings.stickyColor,
-    '--win-opacity': String(win?.opacity ?? settings.opacity),
+    // 原生模式下透明度由外壳用窗口级 alpha 处理，CSS 必须保持不透明
+    '--win-opacity': win?.nativeOpacity ? '1' : String(win?.opacity || settings.opacity),
   } as React.CSSProperties
   const modeIcon = win?.mode === 'top' ? 'top' : win?.mode === 'normal' ? 'window' : 'pin'
-  const faded = settings.fadeOnLeave && !hovered
+  const native = !!win?.nativeOpacity
+  const faded = !native && settings.fadeOnLeave && !hovered // 原生模式下的变淡由外壳处理
 
   return (
     <div className={`sticky ${faded ? 'faded' : ''}`} style={style} data-testid="sticky"
-      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+      onMouseEnter={() => { setHovered(true); if (native && settings.fadeOnLeave) void api.setFaded(false) }}
+      onMouseLeave={() => { setHovered(false); if (native && settings.fadeOnLeave) void api.setFaded(true) }}>
       <div className="titlebar" data-testid="titlebar"
         onMouseDown={(e) => { if (e.button === 0 && !(e.target as HTMLElement).closest('button')) void api.beginDrag() }}
         onDoubleClick={async (e) => { if (!(e.target as HTMLElement).closest('button')) setWin(await api.toggleCollapse()) }}>
@@ -343,7 +352,12 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
           </span>
         )}
         <span className="spacer" />
-        {win?.clickThrough && <span className="ctbadge" title={t('clickThroughBadgeHint')} data-testid="ct-badge">{t('clickThroughBadge')}</span>}
+        {win?.clickThrough && (
+          <span className={`ctbadge ${ctrlLive ? 'live' : ''}`} data-testid="ct-badge" data-live={ctrlLive}
+            title={ctrlLive ? t('clickThroughLiveHint') : t('clickThroughBadgeHint')}>
+            {ctrlLive ? t('clickThroughLive') : t('clickThroughBadge')}
+          </span>
+        )}
         {win?.locked && <span className="iconbtn" title={t('lockPosition')}><Icon name="lock" /></span>}
         <button className="iconbtn on" title={t(win?.mode === 'top' ? 'modeTop' : win?.mode === 'normal' ? 'modeNormal' : 'modeDesktop')} onClick={modeMenu} aria-label="窗口模式" data-testid="mode-btn"><Icon name={modeIcon} /></button>
         <button className="iconbtn" title={t('search')} onClick={() => { setView({ kind: 'search' }); setTimeout(() => searchRef.current?.focus(), 0) }} aria-label={t('search')}><Icon name="search" /></button>
