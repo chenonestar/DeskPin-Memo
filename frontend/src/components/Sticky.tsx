@@ -240,6 +240,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
               const v = Number(ev.target.value) / 100
               opacityQueue.current = opacityQueue.current.then(() => api.setWindowOpacity(v)).then((w) => setWin(w)).catch(() => undefined)
             }} />
+          {win?.fadeIgnored && <div className="hint" data-testid="fade-ignored-hint">{t('fadeIgnoredHint')}</div>}
         </div>) },
       { kind: 'custom', node: (
         <div className="swatches" role="group" aria-label={t('color')}>
@@ -331,10 +332,11 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
     '--sticky-bg': win?.color || settings.stickyColor,
     // 原生模式下透明度由外壳用窗口级 alpha 处理，CSS 必须保持不透明
     '--win-opacity': win?.nativeOpacity ? '1' : String(win?.opacity || settings.opacity),
+    '--faded-opacity': String(settings.fadedOpacity || 0.4),
   } as React.CSSProperties
   const modeIcon = win?.mode === 'top' ? 'top' : win?.mode === 'normal' ? 'window' : 'pin'
   const native = !!win?.nativeOpacity
-  const faded = !native && settings.fadeOnLeave && !hovered // 原生模式下的变淡由外壳处理
+  const faded = !native && settings.fadeOnLeave && !win?.clickThrough && !hovered // 原生模式下的变淡由外壳处理
 
   return (
     <div className={`sticky ${faded ? 'faded' : ''}`} style={style} data-testid="sticky"

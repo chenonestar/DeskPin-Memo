@@ -17,7 +17,7 @@ async function setDefaults(page: Page, patch: Record<string, unknown>) {
 test.describe('外观：默认颜色 / 透明度 / 鼠标离开变淡', () => {
   test.afterEach(async ({ page }) => {
     await setNative(page, false)
-    await setDefaults(page, { stickyColor: '#FFF3B0', opacity: 1, fadeOnLeave: false })
+    await setDefaults(page, { stickyColor: '#FFF3B0', opacity: 1, fadeOnLeave: false, fadedOpacity: 0.4 })
   })
 
   test('设置里改「默认便签颜色」，没单独设置过颜色的便签立刻跟随（含已保存过位置的便签）', async ({ page }) => {
@@ -149,5 +149,43 @@ test.describe('鼠标穿透：Ctrl 临时恢复交互的可见反馈', () => {
     await rpc(page, 'SetClickThrough', true)
     await expect(badge).toHaveText('穿透')
     await rpc(page, 'SetClickThrough', false)
+  })
+
+  test('「变淡后的透明度」只在勾选自动变淡时出现，并作为绝对值生效（CSS 预览）', async ({ page }) => {
+    await freshGroup(page)
+    await rpc(page, 'OpenSettings')
+    await page.getByRole('tab', { name: '外观' }).click()
+    await expect(page.getByRole('slider', { name: /变淡后的透明度/ })).toHaveCount(0)
+    await page.getByLabel('鼠标离开后自动变淡').check()
+    await page.getByRole('slider', { name: /变淡后的透明度/ }).fill('70')
+    await expect.poll(async () => (await rpc<{ fadedOpacity: number }>(page, 'GetSettings')).fadedOpacity).toBeCloseTo(0.7, 2)
+    await page.getByTestId('settings-close').click()
+    await expect(page.getByTestId('sticky')).toBeVisible()
+    await leave(page)
+    await expect.poll(async () => Number(await stickyOpacity(page))).toBeCloseTo(0.7, 2)
+    await setDefaults(page, { fadeOnLeave: false, fadedOpacity: 0.4 })
+  })
+
+  test('开启鼠标穿透后自动变淡不生效，并在设置页 / 菜单里明说；不改已保存的设置', async ({ page }) => {
+    await freshGroup(page)
+    await setDefaults(page, { fadeOnLeave: true, fadedOpacity: 0.4 })
+    await page.reload()
+    await leave(page)
+    await expect.poll(async () => Number(await stickyOpacity(page))).toBeLessThan(0.5)
+    await rpc(page, 'SetClickThrough', true)
+    await expect.poll(async () => Number(await stickyOpacity(page))).toBe(1)
+    await page.getByTestId('menu-btn').click()
+    await expect(page.getByTestId('fade-ignored-hint')).toContainText('自动变淡未生效')
+    await page.keyboard.press('Escape')
+    await rpc(page, 'OpenSettings')
+    await page.getByRole('tab', { name: '外观' }).click()
+    await expect(page.getByTestId('fade-ignored-note')).toBeVisible()
+    await expect(page.getByLabel('鼠标离开后自动变淡')).toBeEnabled()
+    await expect(page.getByLabel('鼠标离开后自动变淡')).toBeChecked()
+    await page.getByTestId('settings-close').click()
+    await rpc(page, 'SetClickThrough', false)
+    await expect(page.getByTestId('fade-ignored-note')).toHaveCount(0)
+    expect((await rpc<{ fadeOnLeave: boolean }>(page, 'GetSettings')).fadeOnLeave).toBe(true)
+    await setDefaults(page, { fadeOnLeave: false, fadedOpacity: 0.4 })
   })
 })

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, on } from '../api'
-import type { DataDirChange, DataDirStatus, RegTrace, DirInfo, EncStatus, Group, ImportInfo, Settings as S } from '../types'
+import type { DataDirChange, DataDirStatus, RegTrace, DirInfo, EncStatus, Group, ImportInfo, Settings as S, WindowState } from '../types'
 import { t } from '../i18n/zh-CN'
 import { hotkeyFromEvent } from '../format'
 import { ConfirmDialog, Modal } from './Dialog'
@@ -16,9 +16,11 @@ interface Props {
   onSettings: (s: S) => void
   reloadGroups: () => void
   onClose: () => void
+  /** 当前便签的窗口状态，用于提示「穿透开启时自动变淡不生效」 */
+  win?: WindowState | null
 }
 
-export function Settings({ settings, groups, onSettings, reloadGroups, onClose }: Props) {
+export function Settings({ settings, groups, onSettings, reloadGroups, onClose, win }: Props) {
   const [tab, setTab] = useState<Tab>('general')
   const [conflict, setConflict] = useState<string[]>([])
   // 设置保存必须串行：连续快速修改时，如果请求乱序到达后端，后到的旧值会覆盖新值。
@@ -59,7 +61,7 @@ export function Settings({ settings, groups, onSettings, reloadGroups, onClose }
         </nav>
         <div className="pane" role="tabpanel">
           {tab === 'general' && <General s={settings} groups={groups} patch={patch} reloadGroups={reloadGroups} />}
-          {tab === 'appearance' && <Appearance s={settings} patch={patch} />}
+          {tab === 'appearance' && <Appearance s={settings} patch={patch} clickThrough={!!win?.clickThrough} />}
           {tab === 'reminder' && <Reminder s={settings} patch={patch} />}
           {tab === 'hotkey' && <Hotkeys s={settings} patch={patch} conflict={conflict} />}
           {tab === 'data' && <DataPane />}
@@ -114,7 +116,7 @@ function General({ s, groups, patch, reloadGroups }: P & { groups: Group[]; relo
   )
 }
 
-function Appearance({ s, patch }: P) {
+function Appearance({ s, patch, clickThrough }: P & { clickThrough: boolean }) {
   return (
     <>
       <h4>主题</h4>
@@ -128,6 +130,13 @@ function Appearance({ s, patch }: P) {
       <div className="rowline"><label htmlFor="op">默认透明度 {Math.round(s.opacity * 100)}%</label>
         <input id="op" type="range" min={30} max={100} value={Math.round(s.opacity * 100)} onChange={(e) => void patch({ opacity: Number(e.target.value) / 100 })} /></div>
       <Check label="鼠标离开后自动变淡" checked={s.fadeOnLeave} onChange={(v) => void patch({ fadeOnLeave: v })} />
+      {s.fadeOnLeave && (
+        <div className="rowline"><label htmlFor="fop">变淡后的透明度 {Math.round(s.fadedOpacity * 100)}%</label>
+          <input id="fop" type="range" min={20} max={80} step={5} value={Math.round(s.fadedOpacity * 100)} onChange={(e) => void patch({ fadedOpacity: Number(e.target.value) / 100 })} /></div>
+      )}
+      {s.fadeOnLeave && clickThrough && (
+        <div className="hint" data-testid="fade-ignored-note">当前便签已开启鼠标穿透，此时「自动变淡」不生效（便签保持原透明度）；关闭穿透后恢复。</div>
+      )}
       <div className="rowline"><label>默认便签颜色</label>
         <div className="swatches" style={{ padding: 0 }}>{COLORS.map((c) => (
           <button key={c} className={`swatch ${s.stickyColor === c ? 'on' : ''}`} style={{ background: c }} aria-label={c} onClick={() => void patch({ stickyColor: c })} />))}</div></div>
@@ -182,6 +191,7 @@ function Hotkeys({ s, patch, conflict }: P & { conflict: string[] }) {
       <h4>全局快捷键</h4>
       <HotkeyInput label="快速新建" value={s.hotkeyQuick} onChange={(v) => void patch({ hotkeyQuick: v })} />
       <HotkeyInput label="显示/隐藏全部便签" value={s.hotkeyToggle} onChange={(v) => void patch({ hotkeyToggle: v })} />
+      <HotkeyInput label="切换鼠标穿透" value={s.hotkeyClickThrough} onChange={(v) => void patch({ hotkeyClickThrough: v })} />
       {conflict.length > 0 && <div className="err" role="alert" data-testid="hotkey-conflict">{conflict.map((c) => t('hotkeyConflict', { msg: c })).join('；')}</div>}
       <div className="hint">点击后按下组合键（需含 Ctrl / Alt / Shift / Win 之一）。注册失败即表示与其他程序冲突。</div>
       <h4>窗口内快捷键</h4>

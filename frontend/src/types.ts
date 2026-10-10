@@ -104,6 +104,8 @@ export interface Settings {
   fontSize: number
   opacity: number
   fadeOnLeave: boolean
+  /** 变淡后的透明度（0.2–0.8，绝对值，不超过便签自身透明度） */
+  fadedOpacity: number
   stickyColor: string
   defaultRemindTime: string
   sound: boolean
@@ -111,6 +113,7 @@ export interface Settings {
   dnd: DND
   hotkeyQuick: string
   hotkeyToggle: string
+  hotkeyClickThrough: string
   dailyOverview: boolean
 }
 
@@ -148,6 +151,8 @@ export interface WindowState {
   visible: boolean
   /** 外壳用窗口级 alpha 处理透明度 / 变淡：前端不要再叠加 CSS opacity（否则便签颜色会叠在黑色窗口底色上变黑） */
   nativeOpacity: boolean
+  /** 鼠标穿透开启且设置里勾选了自动变淡：变淡不生效（仅计算结果，不改已保存的设置） */
+  fadeIgnored: boolean
 }
 
 export interface QuickPreview {

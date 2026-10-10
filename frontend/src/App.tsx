@@ -69,7 +69,7 @@ export default function App() {
       ) : overlay === 'overview' ? (
         <OverviewPanel />
       ) : overlay === 'settings' ? (
-        <Settings settings={settings} groups={groups} onSettings={setSettings} reloadGroups={reloadGroups} onClose={closeSettings} />
+        <Settings settings={settings} groups={groups} onSettings={setSettings} reloadGroups={reloadGroups} onClose={closeSettings} win={win} />
       ) : locked ? (
         <LockScreen onUnlocked={() => setLocked(false)} />
       ) : (

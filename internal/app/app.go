@@ -151,7 +151,18 @@ type WindowState struct {
 	Visible bool `json:"visible"`
 	// NativeOpacity：外壳用窗口级 alpha 处理透明度 / 变淡，前端不要再叠加 CSS opacity。
 	NativeOpacity bool `json:"nativeOpacity"`
+	// FadeIgnored：开启了「鼠标离开后自动变淡」，但这个便签开启了鼠标穿透，所以自动变淡不生效。
+	FadeIgnored bool `json:"fadeIgnored"`
 }
+
+// stateOf 组装前端需要的窗口状态。
+func (a *App) stateOf(w store.Window) WindowState {
+	return WindowState{Window: w, Visible: a.shell.Visible(), NativeOpacity: a.shell.NativeOpacity(),
+		FadeIgnored: a.svc.GetSettings().FadeOnLeave && w.ClickThrough}
+}
+
+// WindowInfo 返回当前便签的窗口状态（无副作用，设置页用它判断自动变淡是否被穿透忽略）。
+func (a *App) WindowInfo() (WindowState, error) { return a.windowState() }
 
 // CurrentGroup 返回便签当前显示的分组。
 func (a *App) CurrentGroup() string { return a.groupID }
@@ -183,7 +194,7 @@ func (a *App) ApplyWindow() (WindowState, error) {
 	a.shell.SetBounds(r) // 外壳负责把不存在屏幕上的位置拉回主屏（AC-12）
 	_ = a.shell.SetMode(w.Mode)
 	a.applyEffects()
-	return WindowState{Window: w, Visible: a.shell.Visible(), NativeOpacity: a.shell.NativeOpacity()}, nil
+	return a.stateOf(w), nil
 }
 
 // 圆角（DIP）：便签 8（需求书 4.1），叠加界面各自与页面里的卡片圆角一致。
@@ -218,34 +229,27 @@ func (a *App) resolvedAppearance() (color string, opacity float64) {
 	return
 }
 
-// fadedOpacity 是「鼠标离开后变淡」时的透明度：约为当前的一半，但不高于当前值、不低于 25%。
-func fadedOpacity(base float64) float64 {
-	f := base * 0.45
-	if f < 0.25 {
-		f = 0.25
-	}
-	if f > base {
-		f = base
-	}
-	return f
-}
-
 // applyAppearance 用窗口级透明度实现「透明度」与「鼠标离开后自动变淡」（FR-205）。
 // 快速输入框 / 设置 / 概览 / 强提醒打开期间一律不透明，保证看得清、点得到。
 func (a *App) applyAppearance() {
 	color, opacity := a.resolvedAppearance()
-	eff := opacity
-	switch {
-	case a.quick != nil || a.alerts > 0:
-		eff = 1
-	case a.faded && a.svc.GetSettings().FadeOnLeave:
-		eff = fadedOpacity(opacity)
-	}
-	a.shell.SetOpacity(eff)
+	r := EffectiveOpacity(a.opacityInput(opacity))
+	a.shell.SetOpacity(r.Value)
 	if color != "" {
 		a.shell.SetBackground(color)
 	}
 	a.shell.SetCornerRadius(a.cornerRadius())
+}
+
+// opacityInput 收集 EffectiveOpacity 需要的全部状态。
+func (a *App) opacityInput(base float64) OpacityInput {
+	st := a.svc.GetSettings()
+	ct := false
+	if w, err := a.svc.GetWindow(a.groupID); err == nil {
+		ct = w.ClickThrough
+	}
+	return OpacityInput{Base: base, FadeEnabled: st.FadeOnLeave, FadedLevel: st.FadedOpacity, ClickThrough: ct,
+		MouseAway: a.faded, Overlay: a.quick != nil, Alert: a.alerts > 0}
 }
 
 // SetFaded 前端在鼠标进入 / 离开便签时调用（仅 NativeOpacity 时）。
@@ -358,7 +362,7 @@ func (a *App) SetWindowMode(mode string) (WindowState, error) {
 
 func (a *App) windowState() (WindowState, error) {
 	w, err := a.svc.GetWindow(a.groupID)
-	return WindowState{Window: w, Visible: a.shell.Visible(), NativeOpacity: a.shell.NativeOpacity()}, err
+	return a.stateOf(w), err
 }
 
 // SetWindowLocked 锁定 / 解锁位置（FR-204）。

@@ -170,6 +170,7 @@ func (d *daemon) init(ctx context.Context) {
 	loop, err := winsys.StartLoop(winsys.Callbacks{
 		OnQuick:        d.app.OpenQuick,
 		OnToggle:       func() { d.app.ToggleVisible() },
+		OnClickThrough: func() { _, _ = d.app.ToggleClickThrough() },
 		OnResume:       func() { log.Print("系统唤醒：重新计算提醒"); d.sched.Kick(); sh.Repin() },
 		OnTimeChange:   func() { log.Print("系统时间变更：重新计算提醒"); d.sched.Kick() },
 		OnTaskbar:      func() { log.Print("资源管理器重启：重新钉在桌面"); sh.Repin() },
@@ -248,7 +249,7 @@ func (d *daemon) applySettings(s service.Settings) {
 }
 
 func (d *daemon) registerHotkeys(s service.Settings) {
-	if conflicts := d.loop.RegisterHotkeys(s.HotkeyQuick, s.HotkeyToggle); len(conflicts) > 0 {
+	if conflicts := d.loop.RegisterHotkeys(s.HotkeyQuick, s.HotkeyToggle, s.HotkeyClickThrough); len(conflicts) > 0 {
 		log.Printf("快捷键冲突: %v", conflicts)
 		d.svc.Emit("hotkey:conflict", conflicts) // 冲突时提示（FR-501）
 	}

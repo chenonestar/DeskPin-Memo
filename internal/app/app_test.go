@@ -248,11 +248,63 @@ func TestFadeOnLeaveUsesWindowOpacityNotBlackBackground(t *testing.T) {
 	if sh.Opacity != 1 {
 		t.Fatalf("关闭「鼠标离开后自动变淡」后应保持不透明: %v", sh.Opacity)
 	}
-	// 本身已经很透明的便签：变淡后不会比自身更不透明，也不低于 25%
-	for _, base := range []float64{1, 0.8, 0.5, 0.3} {
-		if f := fadedOpacity(base); f > base || f < 0.25 {
-			t.Errorf("fadedOpacity(%v) = %v", base, f)
-		}
+}
+
+func TestFadedOpacityIsAbsoluteSetting(t *testing.T) {
+	a, sh := newApp(t)
+	sh.Native = true
+	s := a.GetSettings()
+	s.FadeOnLeave, s.FadedOpacity = true, 0.3
+	a.SaveSettings(s)
+	a.ApplyWindow()
+	if sh.Opacity != 0.3 {
+		t.Fatalf("变淡后应为设置的绝对值: %v", sh.Opacity)
+	}
+	s.FadedOpacity = 0.6
+	a.SaveSettings(s)
+	if sh.Opacity != 0.6 {
+		t.Fatalf("修改变淡透明度应立刻生效: %v", sh.Opacity)
+	}
+	// 便签本身比变淡值更透明时，不会反而变得更不透明
+	a.SetWindowOpacity(0.5)
+	if sh.Opacity != 0.5 {
+		t.Fatalf("变淡值不应超过便签自身透明度: %v", sh.Opacity)
+	}
+	// 越界值被限制在 20%–80%
+	s.FadedOpacity = 0.05
+	a.SaveSettings(s)
+	if got := a.GetSettings().FadedOpacity; got != 0.2 {
+		t.Fatalf("clamp: %v", got)
+	}
+}
+
+func TestClickThroughIgnoresFade(t *testing.T) {
+	a, sh := newApp(t)
+	sh.Native = true
+	s := a.GetSettings()
+	s.FadeOnLeave = true
+	a.SaveSettings(s)
+	ws, _ := a.ApplyWindow()
+	if ws.FadeIgnored || sh.Opacity >= 1 {
+		t.Fatalf("未穿透时应变淡: %+v %v", ws, sh.Opacity)
+	}
+	if _, err := a.ToggleClickThrough(); err != nil {
+		t.Fatal(err)
+	}
+	if sh.Opacity != 1 {
+		t.Fatalf("穿透开启时自动变淡不生效: %v", sh.Opacity)
+	}
+	if ws, _ := a.WindowInfo(); !ws.FadeIgnored {
+		t.Fatalf("应提示自动变淡未生效: %+v", ws)
+	}
+	if !a.GetSettings().FadeOnLeave {
+		t.Fatal("不应改写已保存的设置")
+	}
+	if _, err := a.ToggleClickThrough(); err != nil {
+		t.Fatal(err)
+	}
+	if ws, _ := a.WindowInfo(); sh.Opacity >= 1 || ws.FadeIgnored {
+		t.Fatalf("关闭穿透后恢复自动变淡: %v", sh.Opacity)
 	}
 }
 

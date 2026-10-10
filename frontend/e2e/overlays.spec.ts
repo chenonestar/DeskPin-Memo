@@ -102,6 +102,13 @@ test.describe('设置窗口', () => {
     await page.getByRole('button', { name: '快速新建' }).click()
     await page.keyboard.press('Control+Alt+N')
     await expect(page.getByRole('button', { name: '快速新建' })).toHaveText('Ctrl+Alt+N')
+    // 切换鼠标穿透的热键：默认 Ctrl+Alt+P，可自定义
+    await expect(page.getByRole('button', { name: '切换鼠标穿透' })).toHaveText('Ctrl+Alt+P')
+    await page.getByRole('button', { name: '切换鼠标穿透' }).click()
+    await page.keyboard.press('Control+Alt+L')
+    await expect.poll(async () => (await rpc<{ hotkeyClickThrough: string }>(page, 'GetSettings')).hotkeyClickThrough).toBe('Ctrl+Alt+L')
+    await page.getByRole('button', { name: '切换鼠标穿透' }).click()
+    await page.keyboard.press('Control+Alt+P')
   })
 
   test('分组管理：重命名、不能删除收件箱', async ({ page }) => {

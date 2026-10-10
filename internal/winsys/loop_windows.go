@@ -33,6 +33,7 @@ const (
 const (
 	hotkeyQuick     = 1
 	hotkeyToggle    = 2
+	hotkeyClickThru = 3
 	wmRunOnLoop     = wmUser + 2
 	wmSettingChange = 0x001A
 	wmInput         = 0x00FF
@@ -52,6 +53,7 @@ type rawInputDevice struct {
 type Callbacks struct {
 	OnQuick        func()
 	OnToggle       func()
+	OnClickThrough func()
 	OnResume       func() // 睡眠唤醒（FR-306）
 	OnTimeChange   func() // 系统时间 / 时区改变（NFR-05）
 	OnTaskbar      func() // 资源管理器重启（AC-03）
@@ -302,13 +304,14 @@ func ParseHotkey(s string) (mods uint32, vk uint32, err error) {
 }
 
 // RegisterHotkeys 注册（或重新注册）全局热键。注册失败即判定冲突（7.3），返回冲突说明。
-func (l *Loop) RegisterHotkeys(quick, toggle string) (conflicts []string) {
+func (l *Loop) RegisterHotkeys(quick, toggle, clickThrough string) (conflicts []string) {
 	done := make(chan []string, 1)
 	l.do(func() {
 		var out []string
 		pUnregisterHotKey.Call(uintptr(l.hwnd), hotkeyQuick)
 		pUnregisterHotKey.Call(uintptr(l.hwnd), hotkeyToggle)
-		for id, hk := range map[uintptr]string{hotkeyQuick: quick, hotkeyToggle: toggle} {
+		pUnregisterHotKey.Call(uintptr(l.hwnd), hotkeyClickThru)
+		for id, hk := range map[uintptr]string{hotkeyQuick: quick, hotkeyToggle: toggle, hotkeyClickThru: clickThrough} {
 			mods, vk, err := ParseHotkey(hk)
 			if err != nil {
 				out = append(out, fmt.Sprintf("%s：%v", hk, err))
@@ -352,6 +355,8 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 			safe(l.cb.OnQuick)
 		case hotkeyToggle:
 			safe(l.cb.OnToggle)
+		case hotkeyClickThru:
+			safe(l.cb.OnClickThrough)
 		}
 		return 0
 	case wmPowerBroadcast:

@@ -65,7 +65,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
   background: var(--sticky-bg, var(--bg)); border-radius: 8px; overflow: hidden;
   border: 1px solid var(--line); opacity: var(--win-opacity); transition: opacity 0.25s;
 }
-.sticky.faded { opacity: 0.38; }
+.sticky.faded { opacity: min(var(--faded-opacity, 0.4), var(--win-opacity)); }
 .titlebar {
   height: 28px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 4px 0 10px;
   background: var(--bg-2); cursor: default;
