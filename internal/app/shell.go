@@ -62,6 +62,7 @@ type NopShell struct {
 	Background   string
 	Radius       int
 	reg          *regtrace.MemRegistry // 模拟的注册表（开发服务器 / 测试）
+	EmptyReg     bool                  // 模拟的注册表初始为空（模拟「绿色版默认零写入」）
 	ClickThrough bool
 }
 
@@ -91,14 +92,19 @@ func (n *NopShell) Quit()                                                 {}
 func (n *NopShell) memReg() *regtrace.MemRegistry {
 	if n.reg == nil {
 		n.reg = regtrace.NewMemRegistry()
-		_, _ = regtrace.Register(n.reg, fakeExe, `C:\Users\me\AppData\Roaming\DeskPinMemo\icons\notify.png`)
-		_ = regtrace.SetAutostart(n.reg, fakeExe, true)
+		if !n.EmptyReg {
+			_, _ = regtrace.Register(n.reg, FakeExe, `C:\Users\me\AppData\Roaming\DeskPinMemo\icons\notify.png`)
+			_ = regtrace.SetAutostart(n.reg, FakeExe, true)
+		}
 	}
 	return n.reg
 }
 
-func (n *NopShell) RegistryTraces() []regtrace.Trace { return regtrace.Traces(n.memReg(), fakeExe) }
-func (n *NopShell) ClearRegistry() ([]string, error) { return regtrace.Clear(n.memReg(), fakeExe) }
+// Reg 返回模拟的注册表（开发服务器据此演示 regtrace.Apply 的行为）。
+func (n *NopShell) Reg() *regtrace.MemRegistry { return n.memReg() }
 
-// fakeExe 是 NopShell 模拟的 exe 路径。
-const fakeExe = `D:\Portable\DeskPinMemo\DeskPinMemo.exe`
+func (n *NopShell) RegistryTraces() []regtrace.Trace { return regtrace.Traces(n.memReg(), FakeExe) }
+func (n *NopShell) ClearRegistry() ([]string, error) { return regtrace.Clear(n.memReg(), FakeExe) }
+
+// FakeExe 是 NopShell 模拟的 exe 路径。
+const FakeExe = `D:\Portable\DeskPinMemo\DeskPinMemo.exe`

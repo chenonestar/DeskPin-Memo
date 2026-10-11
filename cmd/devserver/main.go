@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"deskpinmemo/internal/app"
+	"deskpinmemo/internal/regtrace"
 	"deskpinmemo/internal/scheduler"
 	"deskpinmemo/internal/service"
 	"deskpinmemo/internal/store"
@@ -55,6 +56,7 @@ func main() {
 	static := flag.String("static", "frontend/dist", "前端构建产物目录")
 	seed := flag.Bool("seed", false, "写入演示数据")
 	jitter := flag.Duration("jitter", 0, "给每个 RPC 加 0..jitter 的随机延迟（测试用：放大请求乱序，暴露界面与后端之间的时序问题）")
+	portable := flag.Bool("portable", false, "模拟绿色版：默认零注册表写入，设置里可启用「系统集成」（用内存注册表演示）")
 	flag.Parse()
 
 	if *dir == "" {
@@ -69,13 +71,29 @@ func main() {
 		log.Fatal(err)
 	}
 	defer st.Close()
-	svc, err := service.New(st, *dir)
+	svc, err := service.New(st, *dir, service.Options{Portable: *portable})
 	if err != nil {
 		log.Fatal(err)
 	}
 	h := &hub{subs: map[chan []byte]struct{}{}}
 	shell := &app.NopShell{R: app.Rect{X: 100, Y: 100, W: 300, H: 420}, Mode: "desktop"}
 	a := app.New(svc, shell, "dev")
+	if *portable {
+		shell.EmptyReg = true
+		var prev *regtrace.State
+		var mu sync.Mutex
+		apply := func(s service.Settings) {
+			mu.Lock()
+			defer mu.Unlock()
+			want := regtrace.State{Integration: svc.Integration(), Autostart: s.Autostart}
+			if _, _, err := regtrace.Apply(shell.Reg(), app.FakeExe, `D:\Portable\DeskPinMemo\data\icons\notify.png`, prev, want, func(string) bool { return true }); err != nil {
+				log.Print(err)
+			}
+			prev = &want
+		}
+		apply(svc.GetSettings())
+		svc.OnSettings = apply
+	}
 	svc.Emit, a.Emit = h.emit, h.emit
 	sched := scheduler.New(scheduler.Config{Source: st, Notifier: devNotifier{h}, DND: svc.DND,
 		StrongEnabled: func() bool { return svc.GetSettings().StrongReminder },

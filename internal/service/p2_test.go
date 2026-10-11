@@ -397,12 +397,60 @@ func TestPortableDefaultsAutostartOff(t *testing.T) {
 	if p.GetSettings().Autostart {
 		t.Fatal("绿色版默认不应开启开机自启")
 	}
-	// 用户手动开启后保留，重启不会被默认值覆盖
+	// 默认关闭「系统集成」：开机自启需要写注册表，所以即使前端传来 autostart=true 也会被压回 false
+	if p.Integration() || p.GetSettings().SystemIntegration {
+		t.Fatal("绿色版默认不应启用系统集成")
+	}
 	s := p.GetSettings()
 	s.Autostart = true
+	if got, _ := p.SaveSettings(s); got.Autostart {
+		t.Fatal("未启用系统集成时开机自启必须为关")
+	}
+	// 用户手动启用系统集成并开启自启后保留，重启不会被默认值覆盖
+	s.SystemIntegration, s.Autostart = true, true
 	p.SaveSettings(s)
+	if !p.Integration() {
+		t.Fatal("启用后应允许写注册表")
+	}
 	p2, _ := New(p.st, p.dataDir, Options{Portable: true})
-	if !p2.GetSettings().Autostart {
+	if !p2.GetSettings().Autostart || !p2.Integration() {
 		t.Fatal("用户明确开启的设置应被保留")
+	}
+	// 关闭系统集成：自启随之关闭
+	s.SystemIntegration = false
+	if got, _ := p2.SaveSettings(s); got.Autostart {
+		t.Fatal("关闭系统集成后开机自启应同时关闭")
+	}
+	// 安装版始终允许，且不受该字段影响
+	inst := open(false)
+	s2 := inst.GetSettings()
+	s2.SystemIntegration = false
+	inst.SaveSettings(s2)
+	if !inst.Integration() || !inst.GetSettings().Autostart {
+		t.Fatal("安装版不受系统集成开关影响")
+	}
+}
+
+// 旧版绿色版没有 systemIntegration 字段：已开启过自启的用户视为已选择系统集成，没开过的保持零写入。
+func TestPortableLegacySettingsMigration(t *testing.T) {
+	legacy := func(autostart bool) *Service {
+		dir := t.TempDir()
+		st, _ := store.Open(filepath.Join(dir, "data.db"))
+		t.Cleanup(func() { st.Close() })
+		raw := map[string]any{"autostart": autostart, "language": "zh-CN", "fontSize": 14, "opacity": 1}
+		if err := st.SetSetting("app", raw); err != nil {
+			t.Fatal(err)
+		}
+		svc, err := New(st, dir, Options{Portable: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return svc
+	}
+	if on := legacy(true); !on.Integration() || !on.GetSettings().Autostart {
+		t.Fatal("旧版已开启自启的用户应保留自启")
+	}
+	if off := legacy(false); off.Integration() {
+		t.Fatal("旧版没开自启的用户应保持零写入")
 	}
 }

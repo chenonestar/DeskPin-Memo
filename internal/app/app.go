@@ -626,21 +626,27 @@ func (a *App) RegistryTraces() []regtrace.Trace {
 }
 
 // ClearRegistryTraces 清除全部注册表项（删除绿色版文件夹前使用）。
-// 同时把「开机自启」设置改为关闭，否则下次启动会按设置重新写入。
-// 通知身份和协议是 Toast 必需的，程序再次启动时会重新写入。返回被删除的项。
+// 同时把「开机自启」改为关闭；绿色版还会关闭「系统集成」——否则设置仍是开，通知会继续按「带按钮」模式发送，
+// 但通知身份已被清掉（Win10 会丢弃这些通知）。安装版的通知身份和协议在程序下次启动时重新写入。返回被删除的项。
 func (a *App) ClearRegistryTraces() ([]string, error) {
-	s := a.svc.GetSettings()
-	if s.Autostart {
-		s.Autostart = false
-		if _, err := a.svc.SaveSettings(s); err != nil {
-			return nil, err
-		}
-	}
 	removed, err := a.shell.ClearRegistry()
 	if removed == nil {
 		removed = []string{}
 	}
-	return removed, err
+	if err != nil {
+		return removed, err
+	}
+	s := a.svc.GetSettings()
+	if s.Autostart || (a.svc.DataDirStatus().Portable && s.SystemIntegration) {
+		s.Autostart = false
+		if a.svc.DataDirStatus().Portable {
+			s.SystemIntegration = false
+		}
+		if _, err := a.svc.SaveSettings(s); err != nil {
+			return removed, err
+		}
+	}
+	return removed, nil
 }
 
 // ---------------------------------------------------------------- 杂项

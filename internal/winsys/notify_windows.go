@@ -5,93 +5,73 @@ package winsys
 import (
 	"encoding/base64"
 	"fmt"
-	"html"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	u16 "unicode/utf16"
 
-	"deskpinmemo/internal/regtrace"
 	"deskpinmemo/internal/scheduler"
+	"deskpinmemo/internal/toast"
 )
 
-// AppUserModelID 用于 Toast 归属（1.5 通知图标与 AUMID）。
-const AppUserModelID = "DeskPinMemo.App"
-
-// ProtocolScheme 是通知按钮回调用的自定义协议：deskpin://action?item=ID&a=done
-const ProtocolScheme = "deskpin"
+// AppUserModelID / ProtocolScheme 见 internal/toast。
+const (
+	AppUserModelID = toast.AppUserModelID
+	ProtocolScheme = toast.ProtocolScheme
+)
 
 const createNoWindow = 0x08000000
 
-// RegisterIdentity 注册 AUMID（显示名与图标）和 deskpin:// 协议，均写入 HKCU，无需管理员权限。
-// 没有 AUMID 注册时 Win10 会丢弃未打包应用的 Toast。内容未变化时不重复写入；
-// 程序目录被移动后，下次启动会自动把协议命令更新到新位置。
-func RegisterIdentity(exePath, dataDir string) error {
+// PrepareIcon 把通知图标写到数据目录并返回路径（Toast 的 appLogoOverride 和通知身份的 IconUri 共用）。
+// 只写程序自己的数据目录，不碰注册表。
+func PrepareIcon(dataDir string) string {
 	iconPath := filepath.Join(dataDir, "icons", "notify.png")
 	if b, err := iconFS.ReadFile("icons/notify.png"); err == nil {
 		_ = os.MkdirAll(filepath.Dir(iconPath), 0o755)
 		_ = os.WriteFile(iconPath, b, 0o644)
 	}
-	_, err := regtrace.Register(winReg{}, exePath, iconPath)
-	return err
+	return iconPath
 }
 
 // ---- Toast ----
 
 // Toaster 通过 WinRT ToastNotificationManager 发送系统 Toast（FR-303/304）。
+//
+// Full 为真：使用已登记的通知身份 + deskpin:// 协议，通知带「完成 / 稍后」按钮；
+// 为假（绿色版默认）：借用系统自带的通知身份，不依赖任何注册表项，通知不带按钮。
 type Toaster struct {
 	IconPath string
+	full     atomic.Bool
 }
 
-// Notify 实现 scheduler.Notifier。按钮用协议激活，点击后由系统启动 DeskPinMemo.exe deskpin://…，
+// SetFull 切换完整 / 精简模式（用户在设置里启用或关闭「系统集成」时）。
+func (t *Toaster) SetFull(on bool) { t.full.Store(on) }
+
+// Notify 实现 scheduler.Notifier。完整模式下按钮用协议激活，点击后由系统启动 DeskPinMemo.exe deskpin://…，
 // 单实例机制会把参数转交给已运行的实例。
 func (t *Toaster) Notify(n scheduler.Notification) error {
-	return runPowerShell(toastScript(n, t.IconPath))
+	return runPowerShell(toastScript(n, t.IconPath, t.full.Load()))
 }
 
 // RemoveToast 撤回已弹出的通知（其他设备已处理该提醒，AC-S04）。
 func (t *Toaster) RemoveToast(tag string) error {
 	return runPowerShell(fmt.Sprintf(`[Windows.UI.Notifications.ToastNotificationManager]::History.Remove('%s','deskpin','%s')`,
-		psQuote(tag), AppUserModelID))
+		psQuote(tag), psQuote(toast.ID(t.full.Load()))))
 }
 
 func psQuote(s string) string { return strings.ReplaceAll(s, "'", "''") }
 
-func toastXML(n scheduler.Notification, icon string) string {
-	var b strings.Builder
-	launch := ProtocolScheme + "://open"
-	if n.ItemID != "" {
-		launch += "?item=" + url.QueryEscape(n.ItemID)
+// ClearToastHistory 清掉通知中心里已弹出的本程序通知（两种身份都清，尽力而为）。
+func ClearToastHistory() {
+	for _, id := range []string{toast.AppUserModelID, toast.BorrowedAppUserModelID} {
+		_ = runPowerShell(fmt.Sprintf(`[Windows.UI.Notifications.ToastNotificationManager]::History.Clear('%s')`, psQuote(id)))
 	}
-	scenario := ""
-	if n.Strong {
-		scenario = ` scenario="reminder"`
-	}
-	fmt.Fprintf(&b, `<toast launch="%s" activationType="protocol"%s><visual><binding template="ToastGeneric">`, html.EscapeString(launch), scenario)
-	if icon != "" {
-		fmt.Fprintf(&b, `<image placement="appLogoOverride" src="%s"/>`, html.EscapeString("file:///"+filepath.ToSlash(icon)))
-	}
-	fmt.Fprintf(&b, `<text>%s</text>`, html.EscapeString(n.Title))
-	if n.Body != "" {
-		fmt.Fprintf(&b, `<text>%s</text>`, html.EscapeString(n.Body))
-	}
-	b.WriteString(`</binding></visual>`)
-	if len(n.Actions) > 0 && n.ItemID != "" {
-		b.WriteString(`<actions>`)
-		for _, a := range n.Actions {
-			args := fmt.Sprintf("%s://action?item=%s&a=%s", ProtocolScheme, url.QueryEscape(n.ItemID), url.QueryEscape(a.ID))
-			fmt.Fprintf(&b, `<action content="%s" arguments="%s" activationType="protocol"/>`, html.EscapeString(a.Label), html.EscapeString(args))
-		}
-		b.WriteString(`</actions>`)
-	}
-	b.WriteString(`<audio src="ms-winsoundevent:Notification.Reminder"/></toast>`)
-	return b.String()
 }
 
-func toastScript(n scheduler.Notification, icon string) string {
+func toastScript(n scheduler.Notification, icon string, full bool) string {
 	tag := n.Tag
 	if tag == "" {
 		tag = "reminder"
@@ -105,7 +85,7 @@ $t = New-Object Windows.UI.Notifications.ToastNotification $x
 $t.Tag = '%s'
 $t.Group = 'deskpin'
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('%s').Show($t)
-`, psQuote(toastXML(n, icon)), psQuote(tag), AppUserModelID)
+`, psQuote(toast.XML(n, icon, full)), psQuote(tag), psQuote(toast.ID(full)))
 }
 
 func runPowerShell(script string) error {
@@ -121,17 +101,4 @@ func runPowerShell(script string) error {
 		return fmt.Errorf("发送通知失败: %v: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-// ---- 开机自启（FR-503）----
-
-// SetAutostart 按用户的明确操作写入 / 删除 HKCU\...\Run，无需管理员权限。启动参数 --autostart 表示静默启动。
-func SetAutostart(enable bool, exePath string) error {
-	return regtrace.SetAutostart(winReg{}, exePath, enable)
-}
-
-// AutostartEnabled 返回当前是否已配置自启。
-func AutostartEnabled() bool {
-	_, ok := winReg{}.GetString(regtrace.RunKey, regtrace.RunValue)
-	return ok
 }

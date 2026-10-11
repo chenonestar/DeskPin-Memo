@@ -13,11 +13,20 @@ export default defineConfig({
     viewport: { width: 300, height: 420 },
     launchOptions: { executablePath: process.env.CHROMIUM_PATH || undefined },
   },
-  webServer: {
-    // E2E_JITTER（如 80ms）给每个 RPC 加随机延迟，用来在本地放大时序问题
-    command: `go run ../cmd/devserver -addr 127.0.0.1:8790 -static dist -jitter ${process.env.E2E_JITTER ?? '0s'}`,
-    url: 'http://127.0.0.1:8790',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      // E2E_JITTER（如 80ms）给每个 RPC 加随机延迟，用来在本地放大时序问题
+      command: `go run ../cmd/devserver -addr 127.0.0.1:8790 -static dist -jitter ${process.env.E2E_JITTER ?? '0s'}`,
+      url: 'http://127.0.0.1:8790',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      // 模拟绿色版（默认零注册表写入，内存注册表）：portable.spec.ts 使用
+      command: `go run ../cmd/devserver -addr 127.0.0.1:8791 -static dist -portable -jitter ${process.env.E2E_JITTER ?? '0s'}`,
+      url: 'http://127.0.0.1:8791',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
 })

@@ -4,7 +4,6 @@ package winsys
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 
@@ -108,9 +107,10 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
-// SyncAutostart 启动时 / 与自启无关的设置被修改时调用：让自启项与设置一致（保守，不动别的有效副本的条目）。
-func SyncAutostart(exePath string, enabled bool) (string, error) {
-	return regtrace.SyncAutostart(winReg{}, exePath, enabled, fileExists)
+// ApplyRegistry 让注册表与「系统集成 / 开机自启」设置一致（决策逻辑见 regtrace.Apply）。
+// prev 为 nil 表示程序刚启动。
+func ApplyRegistry(exePath, iconPath string, prev *regtrace.State, want regtrace.State) (msgs []string, cleared bool, err error) {
+	return regtrace.Apply(winReg{}, exePath, iconPath, prev, want, fileExists)
 }
 
 // RegistryTraces 列出本程序写入 HKCU 的全部项。
@@ -123,6 +123,6 @@ func (s *Shell) RegistryTraces() []regtrace.Trace {
 func (s *Shell) ClearRegistry() ([]string, error) {
 	exe, _ := os.Executable()
 	// 通知中心里已弹出的历史通知也一并清掉（尽力而为，失败不影响注册表清理）
-	_ = runPowerShell(fmt.Sprintf(`[Windows.UI.Notifications.ToastNotificationManager]::History.Clear('%s')`, AppUserModelID))
+	ClearToastHistory()
 	return regtrace.Clear(winReg{}, exe)
 }

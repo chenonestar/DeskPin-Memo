@@ -91,8 +91,19 @@ function General({ s, groups, patch, reloadGroups }: P & { groups: Group[]; relo
   return (
     <>
       <h4>启动</h4>
-      <Check label="开机自动启动（静默显示便签）" checked={s.autostart} onChange={(v) => void patch({ autostart: v })} />
-      {portable && <div className="hint" data-testid="portable-autostart-hint">绿色版默认不开机自启。开启后会在当前用户注册表（HKCU\...\Run）写入本程序当前所在位置；之后搬动文件夹，下次手动启动时会自动更新为新位置。删除文件夹前可在「数据 → 系统注册表项」里清除。</div>}
+      {portable && (
+        <>
+          <Check label="启用系统集成（带「完成 / 稍后」按钮的通知、开机自启）" checked={s.systemIntegration} onChange={(v) => void patch({ systemIntegration: v })} />
+          <div className="hint" data-testid="integration-hint">
+            {s.systemIntegration
+              ? '已启用：会在当前用户注册表（HKCU）写入通知身份、deskpin:// 协议，以及（如开启自启）开机自启项。关闭此项会立即清除这些注册表项。'
+              : '绿色版默认关闭：程序不向注册表写入任何内容。系统通知借用 Windows 自带的通知身份，来源显示为「Windows PowerShell」，且没有按钮；需要处理的提醒请用便签内的强提醒。'}
+          </div>
+        </>
+      )}
+      <Check label="开机自动启动（静默显示便签）" checked={s.autostart} disabled={portable && !s.systemIntegration} onChange={(v) => void patch({ autostart: v })} />
+      {portable && !s.systemIntegration && <div className="hint" data-testid="portable-autostart-hint">开机自启需要写注册表，请先启用上面的「系统集成」。</div>}
+      {portable && s.systemIntegration && <div className="hint">开启自启后会写入本程序当前所在位置；之后搬动文件夹，下次手动启动时会自动更新为新位置。删除文件夹前可在「数据 → 系统注册表项」里清除。</div>}
       <div className="rowline"><label htmlFor="lang">界面语言</label>
         <select id="lang" value={s.language} disabled onChange={() => undefined}><option value="zh-CN">简体中文</option></select></div>
       <h4>分组</h4>
@@ -516,7 +527,7 @@ function RegistrySection() {
   return (
     <>
       <h4>系统注册表项</h4>
-      <div className="hint">本程序只会写入<b>当前用户</b>注册表（HKCU，不需要管理员权限），用于开机自启和 Toast 通知。绿色版删除文件夹前建议先清除，否则这些项会残留。</div>
+      <div className="hint">本程序只会写入<b>当前用户</b>注册表（HKCU，不需要管理员权限），用于开机自启和带按钮的 Toast 通知。绿色版默认不写；启用「系统集成」后写入，删除文件夹前请先清除（或直接关闭「系统集成」）。</div>
       {traces.length === 0 ? (
         <div className="hint" data-testid="reg-empty" style={{ marginTop: 6 }}>当前没有任何注册表项。</div>
       ) : (
@@ -537,12 +548,12 @@ function RegistrySection() {
           <button className="btn primary" onClick={() => void api.quit()} data-testid="reg-quit">退出程序</button>
         </>}>
           <div data-testid="reg-done">已删除 {removed.length} 项，「开机自启」设置也已关闭。现在可以退出程序并删除文件夹。</div>
-          <div className="hint" style={{ marginTop: 6 }}>如果继续使用，通知身份和协议会在下次启动时重新写入（Toast 通知需要）。</div>
+          <div className="hint" style={{ marginTop: 6 }}>绿色版同时关闭了「系统集成」，继续使用不会再写入；安装版的通知身份和协议会在下次启动时重新写入。</div>
         </Modal>
       )}
       {confirm && (
         <ConfirmDialog title="清除注册表项" okText="清除" danger={false} onCancel={() => setConfirm(false)} onOk={() => void clear()}
-          message={<>将删除上面列出的 {traces.length} 项，并关闭「开机自启」。<br />清除后，通知上的「完成 / 稍后」按钮在程序下次启动前不可用。</>} />
+          message={<>将删除上面列出的 {traces.length} 项，并关闭「开机自启」。<br />清除后，通知上的「完成 / 稍后」按钮不可用（绿色版同时关闭「系统集成」；安装版在程序下次启动时恢复）。</>} />
       )}
       {err && <div className="err" role="alert">{err}</div>}
     </>

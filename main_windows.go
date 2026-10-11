@@ -15,6 +15,7 @@ import (
 	"deskpinmemo/internal/app"
 	"deskpinmemo/internal/datadir"
 	"deskpinmemo/internal/logx"
+	"deskpinmemo/internal/regtrace"
 	"deskpinmemo/internal/scheduler"
 	"deskpinmemo/internal/service"
 	"deskpinmemo/internal/store"
@@ -126,8 +127,10 @@ type daemon struct {
 	dataDir string // 配置目录（图标等）；数据库位置由 service 管理
 	silent  bool   // --autostart 启动
 
-	autostartKnown bool // 是否已在启动时同步过自启项
-	lastAutostart  bool
+	toaster  *winsys.Toaster
+	iconPath string
+	regMu    sync.Mutex
+	regState *regtrace.State // 上一次应用到注册表的状态；nil = 尚未应用（刚启动）
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -161,9 +164,8 @@ func (d *daemon) init(ctx context.Context) {
 	d.shell = sh
 	d.app.SetShell(sh)
 
-	if err := winsys.RegisterIdentity(d.exe, d.dataDir); err != nil {
-		log.Printf("注册 AUMID/协议失败: %v", err)
-	}
+	d.iconPath = winsys.PrepareIcon(d.dataDir) // 只写数据目录
+	d.toaster = &winsys.Toaster{IconPath: d.iconPath}
 	settings := d.svc.GetSettings()
 	d.applySettings(settings)
 
@@ -189,7 +191,7 @@ func (d *daemon) init(ctx context.Context) {
 	}
 
 	// 通知与调度
-	toaster := &winsys.Toaster{IconPath: filepath.Join(d.dataDir, "icons", "notify.png")}
+	toaster := d.toaster
 	d.svc.Kick = func() {
 		if d.sched != nil {
 			d.sched.Kick()
@@ -227,22 +229,23 @@ func (d *daemon) init(ctx context.Context) {
 }
 
 func (d *daemon) applySettings(s service.Settings) {
-	switch {
-	case !d.autostartKnown:
-		// 启动时：让注册表与设置一致。程序目录被移动后，这里会把失效的自启路径更新到当前位置；
-		// 但不会动别的副本（如已安装版）留下的有效条目。
-		if msg, err := winsys.SyncAutostart(d.exe, s.Autostart); err != nil {
-			log.Printf("同步开机自启失败: %v", err)
-		} else if msg != "" {
-			log.Print(msg)
-		}
-	case s.Autostart != d.lastAutostart:
-		// 用户在设置里明确切换了开机自启：强制写入 / 删除
-		if err := winsys.SetAutostart(s.Autostart, d.exe); err != nil {
-			log.Printf("设置开机自启失败: %v", err)
-		}
-	} // 其他设置（主题、字号…）被修改时不碰注册表
-	d.autostartKnown, d.lastAutostart = true, s.Autostart
+	// 注册表只在「系统集成」允许时才写（安装版始终允许；绿色版默认关闭 = 零写入），
+	// 决策逻辑与测试在 regtrace.Apply。保存与注册表无关的设置（主题、字号…）时状态不变，不会碰注册表。
+	want := regtrace.State{Integration: d.svc.Integration(), Autostart: s.Autostart}
+	d.regMu.Lock()
+	msgs, cleared, err := winsys.ApplyRegistry(d.exe, d.iconPath, d.regState, want)
+	d.regState = &want
+	d.regMu.Unlock()
+	for _, m := range msgs {
+		log.Print(m)
+	}
+	if err != nil {
+		log.Printf("更新注册表失败: %v", err)
+	}
+	if cleared {
+		winsys.ClearToastHistory()
+	}
+	d.toaster.SetFull(want.Integration)
 	if d.loop != nil {
 		d.registerHotkeys(s)
 	}

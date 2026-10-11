@@ -5,8 +5,11 @@ import "deskpinmemo/internal/scheduler"
 // Settings 是全局设置（4.3 设置窗口的各页签）。
 type Settings struct {
 	// 常规
-	Autostart bool   `json:"autostart"`
-	Language  string `json:"language"`
+	// SystemIntegration：允许写入当前用户注册表以启用「带按钮的系统通知」和「开机自启」。
+	// 仅对绿色版有意义（默认关闭 = 零注册表写入）；安装版始终启用。
+	SystemIntegration bool   `json:"systemIntegration"`
+	Autostart         bool   `json:"autostart"`
+	Language          string `json:"language"`
 	// 外观
 	Theme        string  `json:"theme"`        // system | light | dark
 	FontSize     int     `json:"fontSize"`     // 12 | 14 | 16
@@ -31,7 +34,7 @@ type Settings struct {
 // DefaultSettings 返回默认设置。
 func DefaultSettings() Settings {
 	return Settings{
-		Autostart: true, Language: "zh-CN", Theme: "system", FontSize: 14, Opacity: 1,
+		SystemIntegration: true, Autostart: true, Language: "zh-CN", Theme: "system", FontSize: 14, Opacity: 1,
 		StickyColor: "#FFF3B0", DefaultRemindTime: "09:00", Sound: true,
 		DND:                scheduler.DND{Enabled: false, Start: "22:00", End: "08:00"},
 		HotkeyQuick:        "Ctrl+Alt+N",

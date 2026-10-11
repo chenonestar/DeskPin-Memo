@@ -80,6 +80,7 @@ func New(st *store.Store, dataDir string, opts ...Options) (*Service, error) {
 		// 绿色版默认不自启：开机自启要写注册表，且路径固定为当前 exe，搬动文件夹会失效；
 		// 拿到 zip 只想试用的人不应被悄悄加上开机启动。用户仍可在设置里手动开启。
 		cfg.Autostart = false
+		cfg.SystemIntegration = false // 绿色版默认零注册表写入；用户手动开启「系统集成」后才写
 	}
 	if ok, err := st.GetSetting("app", &cfg); err != nil {
 		return nil, err
@@ -88,8 +89,33 @@ func New(st *store.Store, dataDir string, opts ...Options) (*Service, error) {
 			return nil, err
 		}
 	}
-	s.settings = cfg.normalized()
+	if s.portable {
+		// 旧版本的绿色版没有这个设置：已明确开启过开机自启的用户视为已选择系统集成，避免悄悄丢掉他们的选择
+		var raw map[string]any
+		if ok, _ := st.GetSetting("app", &raw); ok {
+			if _, has := raw["systemIntegration"]; !has && cfg.Autostart {
+				cfg.SystemIntegration = true
+			}
+		}
+	}
+	s.settings = s.enforceIntegration(cfg.normalized())
 	return s, nil
+}
+
+// Integration 返回是否允许写入注册表（带按钮的通知、开机自启）：安装版始终允许，绿色版取决于设置。
+func (s *Service) Integration() bool {
+	if !s.portable {
+		return true
+	}
+	return s.GetSettings().SystemIntegration
+}
+
+// enforceIntegration 绿色版未启用系统集成时，开机自启必为关（它需要写注册表）。
+func (s *Service) enforceIntegration(in Settings) Settings {
+	if s.portable && !in.SystemIntegration {
+		in.Autostart = false
+	}
+	return in
 }
 
 // Store 返回底层存储（供外壳使用）。
@@ -738,7 +764,7 @@ func (s *Service) GetSettings() Settings {
 
 // SaveSettings 保存设置并通知外壳应用。
 func (s *Service) SaveSettings(in Settings) (Settings, error) {
-	in = in.normalized()
+	in = s.enforceIntegration(in.normalized())
 	if err := s.st.SetSetting("app", in); err != nil {
 		return in, err
 	}

@@ -98,6 +98,8 @@ export interface DND {
 }
 
 export interface Settings {
+  /** 允许写注册表（带按钮的系统通知、开机自启）。仅绿色版有意义：默认关 = 零写入；安装版始终启用 */
+  systemIntegration: boolean
   autostart: boolean
   language: string
   theme: 'system' | 'light' | 'dark'

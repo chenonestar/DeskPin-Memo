@@ -205,3 +205,121 @@ func TestTracesIncludeWindowsGeneratedRecords(t *testing.T) {
 		t.Fatal("未知 exe 路径时不应删除任何托盘记录")
 	}
 }
+
+// ---- Apply：绿色版默认零写入 ----
+
+// writeCounter 记录所有写操作（Set* / Delete*），用来断言「什么都没写」。
+type writeCounter struct {
+	*MemRegistry
+	writes []string
+}
+
+func (w *writeCounter) SetString(p, n, v string) error {
+	w.writes = append(w.writes, "set "+p+" "+n)
+	return w.MemRegistry.SetString(p, n, v)
+}
+func (w *writeCounter) SetDWord(p, n string, v uint32) error {
+	w.writes = append(w.writes, "dword "+p+" "+n)
+	return w.MemRegistry.SetDWord(p, n, v)
+}
+func (w *writeCounter) DeleteValue(p, n string) error {
+	w.writes = append(w.writes, "delval "+p+" "+n)
+	return w.MemRegistry.DeleteValue(p, n)
+}
+func (w *writeCounter) DeleteTree(p string) error {
+	w.writes = append(w.writes, "deltree "+p)
+	return w.MemRegistry.DeleteTree(p)
+}
+
+func never(string) bool { return false }
+
+func TestApplyPortableDefaultWritesNothing(t *testing.T) {
+	w := &writeCounter{MemRegistry: NewMemRegistry()}
+	// 启动
+	if _, cleared, err := Apply(w, exeA, "i.png", nil, State{}, never); err != nil || cleared {
+		t.Fatal(err, cleared)
+	}
+	// 之后各种与注册表无关的设置变化（状态不变）
+	prev := State{}
+	for i := 0; i < 3; i++ {
+		if _, _, err := Apply(w, exeA, "i.png", &prev, State{}, never); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 即使「自启」被误传为真，未启用集成时也不会写
+	if _, _, err := Apply(w, exeA, "i.png", &prev, State{Autostart: true}, never); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.writes) != 0 {
+		t.Fatalf("默认模式不应有任何注册表写入: %v", w.writes)
+	}
+	if got := Traces(w, exeA); len(got) != 0 {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestApplyStartupRemovesOnlyOwnLegacyAutostartWhenOff(t *testing.T) {
+	w := &writeCounter{MemRegistry: NewMemRegistry()}
+	_ = w.MemRegistry.SetString(RunKey, RunValue, RunCommand(exeA)) // 旧版本留下的、指向本 exe
+	if _, _, err := Apply(w, exeA, "i.png", nil, State{}, func(string) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := w.GetString(RunKey, RunValue); ok {
+		t.Fatal("旧版本留下的本程序自启项应被移除")
+	}
+	// 另一个仍然存在的副本（如已安装版）的条目不能动
+	_ = w.MemRegistry.SetString(RunKey, RunValue, RunCommand(`C:\Other\DeskPinMemo.exe`))
+	w.writes = nil
+	if _, _, err := Apply(w, exeA, "i.png", nil, State{}, func(string) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := w.GetString(RunKey, RunValue); !ok || v != RunCommand(`C:\Other\DeskPinMemo.exe`) || len(w.writes) != 0 {
+		t.Fatalf("不应动别的副本的条目: %q %v", v, w.writes)
+	}
+}
+
+func TestApplyEnableAndDisableIntegration(t *testing.T) {
+	w := &writeCounter{MemRegistry: NewMemRegistry()}
+	prev := State{}
+	// 运行中开启：登记通知身份 + 协议，但不会因此写自启
+	msgs, cleared, err := Apply(w, exeA, "i.png", &prev, State{Integration: true}, never)
+	if err != nil || cleared || len(msgs) == 0 {
+		t.Fatal(err, cleared, msgs)
+	}
+	if !w.KeyExists(AUMIDKey) || !w.KeyExists(ProtocolKey) {
+		t.Fatal("应登记通知身份和协议")
+	}
+	if _, ok := w.GetString(RunKey, RunValue); ok {
+		t.Fatal("没有开启自启就不应写 Run")
+	}
+	// 再开自启
+	prev = State{Integration: true}
+	if _, _, err := Apply(w, exeA, "i.png", &prev, State{Integration: true, Autostart: true}, never); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := w.GetString(RunKey, RunValue); v != RunCommand(exeA) {
+		t.Fatal(v)
+	}
+	// 关闭集成：全部清除
+	prev = State{Integration: true, Autostart: true}
+	_, cleared, err = Apply(w, exeA, "i.png", &prev, State{}, never)
+	if err != nil || !cleared {
+		t.Fatal(err, cleared)
+	}
+	if got := Traces(w, exeA); len(got) != 0 {
+		t.Fatalf("关闭后不应残留: %+v", got)
+	}
+}
+
+func TestApplyStartupWithIntegrationRegisters(t *testing.T) {
+	w := NewMemRegistry()
+	if _, _, err := Apply(w, exeA, "i.png", nil, State{Integration: true, Autostart: true}, never); err != nil {
+		t.Fatal(err)
+	}
+	if !w.KeyExists(AUMIDKey) || !w.KeyExists(ProtocolKey) {
+		t.Fatal("安装版 / 已启用集成：启动时登记通知身份和协议")
+	}
+	if v, _ := w.GetString(RunKey, RunValue); v != RunCommand(exeA) {
+		t.Fatal(v)
+	}
+}
