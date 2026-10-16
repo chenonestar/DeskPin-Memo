@@ -28,6 +28,7 @@ const (
 	CmdSettings     = 3
 	CmdQuit         = 4
 	CmdClickThrough = 5
+	CmdResetPos     = 6
 )
 
 const (
@@ -397,7 +398,7 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case wmCommand:
-		if cmd := int(wParam & 0xFFFF); cmd >= CmdNew && cmd <= CmdClickThrough && l.cb.OnMenu != nil {
+		if cmd := int(wParam & 0xFFFF); cmd >= CmdNew && cmd <= CmdResetPos && l.cb.OnMenu != nil {
 			c := cmd
 			go l.cb.OnMenu(c)
 		}
@@ -429,6 +430,7 @@ func (l *Loop) showMenu() {
 		ctFlag |= mfChecked
 	}
 	pAppendMenuW.Call(m, ctFlag, CmdClickThrough, uintptr(unsafe.Pointer(utf16("鼠标穿透（按住 Ctrl 临时操作）"))))
+	add(CmdResetPos, "便签回到默认位置")
 	add(CmdSettings, "设置")
 	pAppendMenuW.Call(m, mfSeparator, 0, 0)
 	add(CmdQuit, "退出")

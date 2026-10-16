@@ -41,6 +41,7 @@ export const zhCN = {
   clickThroughBadge: '穿透',
   clickThroughLive: '可操作',
   clickThroughLiveHint: '已按住 Ctrl：暂时可以操作便签，松开后继续穿透',
+  resetPosition: '回到默认位置（右上角）',
   resetAppearance: '恢复默认外观（颜色、透明度）',
   fadeIgnoredHint: '穿透已开启，自动变淡未生效',
   clickThroughBadgeHint: '鼠标穿透已开启：按住 Ctrl 临时操作',

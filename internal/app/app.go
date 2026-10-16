@@ -188,13 +188,35 @@ func (a *App) ApplyWindow() (WindowState, error) {
 	sc := a.shell.Scale()
 	r := Rect{X: w.X, Y: w.Y, W: int(float64(w.Width) * sc), H: a.effectiveHeight(w, sc)}
 	if w.X == 0 && w.Y == 0 { // 首次启动：放在主屏右上角
-		area := a.shell.CursorMonitorArea()
-		r.X, r.Y = area.X+area.W-r.W-40, area.Y+60
+		r.X, r.Y = a.defaultPosition(r.W)
 	}
 	a.shell.SetBounds(r) // 外壳负责把不存在屏幕上的位置拉回主屏（AC-12）
 	_ = a.shell.SetMode(w.Mode)
 	a.applyEffects()
 	return a.stateOf(w), nil
+}
+
+// defaultPosition 是便签的默认位置：鼠标所在显示器工作区的右上角。
+func (a *App) defaultPosition(width int) (x, y int) {
+	area := a.shell.CursorMonitorArea()
+	return area.X + area.W - width - 40, area.Y + 60
+}
+
+// ResetWindowPosition 把便签移回默认位置（鼠标所在显示器的右上角），尺寸不变。
+// 便签可以随意拖动，也可能被拖到看不见的地方 —— 这是找回它的入口（标题栏菜单与托盘菜单都有）。
+func (a *App) ResetWindowPosition() (WindowState, error) {
+	if a.quick != nil { // 叠加界面期间窗口属于叠加界面
+		return a.windowState()
+	}
+	r := a.shell.Bounds()
+	r.X, r.Y = a.defaultPosition(r.W)
+	a.shell.SetBounds(r)
+	a.saveWindow()
+	ws, err := a.windowState()
+	if err == nil {
+		a.Emit("window:state", ws)
+	}
+	return ws, err
 }
 
 // 圆角（DIP）：便签 8（需求书 4.1），叠加界面各自与页面里的卡片圆角一致。

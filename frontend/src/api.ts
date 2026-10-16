@@ -108,6 +108,7 @@ export const api = {
   resetWindowAppearance: () => call<WindowState>('ResetWindowAppearance'),
   setWindowColor: (c: string) => call<WindowState>('SetWindowColor', c),
   setClickThrough: (on: boolean) => call<WindowState>('SetClickThrough', on),
+  resetWindowPosition: () => call<WindowState>('ResetWindowPosition'),
   strongAlertDone: () => call<void>('StrongAlertDone'),
   toggleCollapse: () => call<WindowState>('ToggleCollapse'),
   beginDrag: () => call<void>('BeginDrag'),

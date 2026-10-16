@@ -119,6 +119,10 @@ func (s *Shell) applyToolWindow() {
 	ex := getWindowLong(h, gwlExStyle)
 	ex = (ex | wsExToolWindow) &^ wsExAppWindow
 	setWindowLong(h, gwlExStyle, ex)
+	// 同时去掉标题栏 / 边框样式位（见 framelessStyle）：每次切换模式后都重新确认一遍
+	if st := getWindowLong(h, gwlStyle); framelessStyle(st) != st {
+		setWindowLong(h, gwlStyle, framelessStyle(st))
+	}
 	pSetWindowPos.Call(uintptr(h), 0, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoZOrder|swpNoActivate|swpFrameChanged)
 }
 
@@ -668,12 +672,8 @@ func (s *Shell) applyStylesOnce() {
 	if root == 0 {
 		return
 	}
+	// 只处理根窗口：子窗口（WebView2 宿主）加 WS_EX_LAYERED 却不设 alpha 会整块变黑，见 wantExBits
 	targets := []windows.HWND{root}
-	cb := syscall.NewCallback(func(h uintptr, _ uintptr) uintptr {
-		targets = append(targets, windows.HWND(h))
-		return 1
-	})
-	pEnumChildWindows.Call(uintptr(root), cb, 0)
 
 	s.ctMu.Lock()
 	ct, alpha := s.ct, s.alpha
@@ -689,8 +689,7 @@ func (s *Shell) applyStylesOnce() {
 	changed, failed := 0, 0
 	for _, h := range targets {
 		isRoot := h == root
-		wantTransparent := on
-		wantLayered := on || (isRoot && alpha < 255)
+		wantTransparent, wantLayered := wantExBits(isRoot, on, alpha)
 		ex := getWindowLong(h, gwlExStyle)
 		st := s.ctState[h]
 		nx := ex

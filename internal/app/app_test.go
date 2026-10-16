@@ -345,3 +345,26 @@ func TestOverlaysAndAlertsForceOpaque(t *testing.T) {
 		t.Fatalf("强提醒处理完后恢复变淡: %v", sh.Opacity)
 	}
 }
+
+func TestResetWindowPositionMovesToDefaultCornerAndKeepsSize(t *testing.T) {
+	a, sh := newApp(t)
+	a.ApplyWindow()
+	sh.R = Rect{X: -500, Y: 900, W: 333, H: 444} // 被拖到了奇怪的地方
+	if _, err := a.ResetWindowPosition(); err != nil {
+		t.Fatal(err)
+	}
+	if sh.R.X != 1920-333-40 || sh.R.Y != 60 || sh.R.W != 333 || sh.R.H != 444 {
+		t.Fatalf("应回到工作区右上角且尺寸不变: %+v", sh.R)
+	}
+	w, _ := a.svc.GetWindow(a.groupID)
+	if w.X != sh.R.X || w.Y != sh.R.Y {
+		t.Fatalf("位置应被保存: %+v", w)
+	}
+	// 叠加界面（设置 / 快速输入）期间不动窗口
+	a.OpenSettings()
+	before := sh.R
+	if _, err := a.ResetWindowPosition(); err != nil || sh.R != before {
+		t.Fatalf("叠加界面期间不应移动: %+v %v", sh.R, err)
+	}
+	a.CloseSettings()
+}

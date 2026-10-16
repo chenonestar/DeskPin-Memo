@@ -200,6 +200,18 @@ test.describe('便签窗口', () => {
     await expect(page.getByTestId('group-name')).toContainText('无日期')
   })
 
+  test('菜单「回到默认位置」可用，锁定位置时也能用', async ({ page }) => {
+    await freshGroup(page)
+    await page.getByTestId('menu-btn').click()
+    await page.getByRole('menuitem', { name: '锁定位置' }).click()
+    await page.getByTestId('menu-btn').click()
+    await expect(page.getByRole('menuitem', { name: /回到默认位置/ })).toBeVisible()
+    await page.getByRole('menuitem', { name: /回到默认位置/ }).click()
+    await expect(page.getByTestId('sticky')).toBeVisible()
+    await page.getByTestId('menu-btn').click()
+    await page.getByRole('menuitem', { name: '解除锁定' }).click()
+  })
+
   test('折叠与锁定通过后端保存', async ({ page }) => {
     const g = await freshGroup(page)
     await page.getByTestId('titlebar').dblclick({ position: { x: 150, y: 14 } })

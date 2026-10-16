@@ -266,6 +266,8 @@ func (d *daemon) menu(cmd int) {
 		d.app.ToggleVisible()
 	case winsys.CmdClickThrough:
 		_, _ = d.app.ToggleClickThrough()
+	case winsys.CmdResetPos:
+		_, _ = d.app.ResetWindowPosition()
 	case winsys.CmdSettings:
 		d.app.OpenSettings()
 	case winsys.CmdQuit:

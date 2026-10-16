@@ -226,6 +226,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
       { kind: 'item', label: t('trash'), onClick: () => setView({ kind: 'trash' }) },
       { kind: 'sep' },
       { kind: 'item', label: win?.locked ? t('unlockPosition') : t('lockPosition'), onClick: async () => setWin(await api.setWindowLocked(!win?.locked)) },
+      { kind: 'item', label: t('resetPosition'), onClick: async () => setWin(await api.resetWindowPosition()) },
       { kind: 'item', label: t('collapse'), onClick: async () => setWin(await api.toggleCollapse()) },
       { kind: 'item', label: t('clickThrough'), checked: !!win?.clickThrough, onClick: async () => {
         const w = await api.setClickThrough(!win?.clickThrough)

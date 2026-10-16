@@ -11,6 +11,7 @@
   --danger: #d93025;
   --ok: #2e8b57;
   --card: #fffdf2;
+  --quick-bg: #ffe58a; /* 快速输入框底色：比卡片色更饱和，和便签同一色系，不会显得发白 */
   --card-fg: #2b2a24;
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
   --prio-high: #e5484d;
@@ -25,6 +26,7 @@
   --fg-dim: #b5ae93;
   --line: rgba(255, 255, 255, 0.16);
   --card: #2a2820;
+  --quick-bg: #2a2820;
   --card-fg: #f1eee0;
   color-scheme: dark;
 }
@@ -37,6 +39,7 @@
     --fg-dim: #b5ae93;
     --line: rgba(255, 255, 255, 0.16);
     --card: #2a2820;
+    --quick-bg: #2a2820;
     --card-fg: #f1eee0;
     color-scheme: dark;
   }
@@ -162,7 +165,7 @@ mark { background: rgba(255, 200, 0, 0.55); color: inherit; border-radius: 2px; 
 
 /* ---------- 快速输入框 ---------- */
 .quick-wrap { height: 100%; display: flex; }
-.quick { width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--card); color: var(--card-fg); border-radius: 12px; box-shadow: var(--shadow); border: 1px solid var(--line); padding: 10px 14px 8px; }
+.quick { width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--quick-bg); color: var(--card-fg); border-radius: 12px; box-shadow: var(--shadow); border: 2px solid var(--accent); padding: 10px 14px 8px; }
 .quick input.big { width: 100%; font-size: 20px; border: 0; background: transparent; padding: 6px 2px; }
 .quick input.big:focus { outline: none; }
 .quick .preview { padding: 4px 2px; font-size: 13px; min-height: 22px; }
