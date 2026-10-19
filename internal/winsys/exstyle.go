@@ -25,9 +25,13 @@ func framelessStyle(style uintptr) uintptr {
 //     子窗口不需要任何样式；
 //   - 给子窗口（WebView2 的宿主窗口）加 WS_EX_LAYERED 而又不调用 SetLayeredWindowAttributes，
 //     分层子窗口不会被绘制，整个界面显示为一块黑色。
-func wantExBits(isRoot, clickThrough bool, alpha byte) (transparent, layered bool) {
+//
+// keepLayered：根窗口一旦被我们设为分层窗口，就一直保持（不透明时 alpha=255，视觉上与非分层相同）。
+// 反复添加 / 移除 WS_EX_LAYERED 会让 WebView2 的合成表面重建，是最容易出现「界面残留半透明 / 一时不显示」的操作；
+// 只切换 WS_EX_TRANSPARENT（穿透）和 alpha 值则安全得多。
+func wantExBits(isRoot, clickThrough bool, alpha byte, keepLayered bool) (transparent, layered bool) {
 	if !isRoot {
 		return false, false
 	}
-	return clickThrough, clickThrough || alpha < 255
+	return clickThrough, clickThrough || alpha < 255 || keepLayered
 }

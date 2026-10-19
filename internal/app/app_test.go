@@ -368,3 +368,20 @@ func TestResetWindowPositionMovesToDefaultCornerAndKeepsSize(t *testing.T) {
 	}
 	a.CloseSettings()
 }
+
+func TestResetWindowPositionBringsBackHiddenSticky(t *testing.T) {
+	a, sh := newApp(t)
+	sh.Native = true
+	a.ApplyWindow()
+	a.SetClickThrough(true)
+	sh.Hidden = true
+	if _, err := a.ResetWindowPosition(); err != nil {
+		t.Fatal(err)
+	}
+	if sh.Hidden {
+		t.Fatal("「回到默认位置」应同时把不见了的便签重新显示出来")
+	}
+	if !sh.ClickThrough {
+		t.Fatal("穿透状态应保持")
+	}
+}

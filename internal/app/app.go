@@ -3,6 +3,7 @@ package app
 
 import (
 	"errors"
+	"log"
 	"strings"
 
 	"deskpinmemo/internal/datadir"
@@ -27,13 +28,14 @@ type App struct {
 	shell Shell
 
 	// 当前便签显示的分组，以及进入快速输入前的窗口状态
-	groupID string
-	quick   *quickSaved // 快速输入框 / 设置窗口打开期间保存的便签窗口状态
-	overlay string      // "quick" | "settings" | ""
-	alerts  int         // 尚未处理的强提醒数量（期间需要鼠标交互，暂停鼠标穿透）
-	faded   bool        // 鼠标是否不在便签上（「鼠标离开后自动变淡」）；启动时假定鼠标不在
-	Version string
-	Emit    func(event string, data any)
+	groupID     string
+	quick       *quickSaved   // 快速输入框 / 设置窗口打开期间保存的便签窗口状态
+	overlay     string        // "quick" | "settings" | ""
+	alerts      int           // 尚未处理的强提醒数量（期间需要鼠标交互，暂停鼠标穿透）
+	lastOpacity OpacityResult // 最近一次记入日志的实际透明度（变化时才记）
+	faded       bool          // 鼠标是否不在便签上（「鼠标离开后自动变淡」）；启动时假定鼠标不在
+	Version     string
+	Emit        func(event string, data any)
 }
 
 type quickSaved struct {
@@ -211,6 +213,13 @@ func (a *App) ResetWindowPosition() (WindowState, error) {
 	r := a.shell.Bounds()
 	r.X, r.Y = a.defaultPosition(r.W)
 	a.shell.SetBounds(r)
+	// 同时是「便签不见了」的找回入口：重新确认窗口模式 / 外观 / 穿透并强制显示
+	if w, err := a.svc.GetWindow(a.groupID); err == nil {
+		_ = a.shell.SetMode(w.Mode)
+	}
+	a.faded = false
+	a.applyEffects()
+	a.shell.SetVisible(true)
 	a.saveWindow()
 	ws, err := a.windowState()
 	if err == nil {
@@ -256,6 +265,10 @@ func (a *App) resolvedAppearance() (color string, opacity float64) {
 func (a *App) applyAppearance() {
 	color, opacity := a.resolvedAppearance()
 	r := EffectiveOpacity(a.opacityInput(opacity))
+	if r != a.lastOpacity {
+		a.lastOpacity = r
+		log.Printf("窗口透明度：%.0f%%（%s）", r.Value*100, r.Reason) // 便于排查「叠加界面仍是半透明」之类的问题
+	}
 	a.shell.SetOpacity(r.Value)
 	if color != "" {
 		a.shell.SetBackground(color)
@@ -492,6 +505,7 @@ func (a *App) openOverlay(kind string, w, h int, topFraction bool) {
 	a.applyEffects() // a.quick 已设置 → 暂时关闭穿透
 	a.shell.SetVisible(true)
 	a.shell.Focus()
+	a.applyAppearance() // 显示之后再确认一次：叠加界面必须不透明
 }
 
 func (a *App) closeOverlay() {

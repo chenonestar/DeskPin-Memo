@@ -43,7 +43,9 @@ type Shell struct {
 	lastOn        atomic.Bool             // 最近一次应用的「当前是否处于穿透」
 	ctState       map[windows.HWND]exBits // 仅在 applyStylesOnce 内访问（单飞，无需加锁）：我们加上的样式位
 	interactive   bool                    // 同上：穿透开启但按住 Ctrl 临时恢复交互
-	OnInteractive func(bool)              // 按住 Ctrl 临时恢复交互 / 松开时回调（前端据此显示状态）
+	lastAlpha     int                     // 同上：最近一次记入日志的透明度 / 扩展样式（变化时才记）
+	lastEx        uintptr
+	OnInteractive func(bool) // 按住 Ctrl 临时恢复交互 / 松开时回调（前端据此显示状态）
 }
 
 // ErrPinFallback 表示「钉在桌面」不可用，已降级为「置底窗口」（10.1 风险应对）。
@@ -660,10 +662,22 @@ func (s *Shell) applyStyles() {
 		if !s.applying.CompareAndSwap(false, true) {
 			return
 		}
-		for s.dirty.Swap(false) {
-			s.applyStylesOnce()
+		s.applyLoop()
+	}
+}
+
+// applyLoop 在持有单飞标记的情况下反复应用，直到没有新请求。无论如何退出（含 panic）都会释放标记——
+// 标记一旦卡在「正在应用」，之后所有透明度 / 穿透变化都会被当成「已有人在处理」而悄悄丢掉。
+func (s *Shell) applyLoop() {
+	defer s.applying.Store(false)
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("应用窗口样式时出错（已恢复）: %v", r)
+			s.dirty.Store(false)
 		}
-		s.applying.Store(false)
+	}()
+	for s.dirty.Swap(false) {
+		s.applyStylesOnce()
 	}
 }
 
@@ -689,9 +703,9 @@ func (s *Shell) applyStylesOnce() {
 	changed, failed := 0, 0
 	for _, h := range targets {
 		isRoot := h == root
-		wantTransparent, wantLayered := wantExBits(isRoot, on, alpha)
-		ex := getWindowLong(h, gwlExStyle)
 		st := s.ctState[h]
+		wantTransparent, wantLayered := wantExBits(isRoot, on, alpha, st.layered)
+		ex := getWindowLong(h, gwlExStyle)
 		nx := ex
 		if wantTransparent && nx&wsExTransparent == 0 {
 			nx |= wsExTransparent
@@ -719,13 +733,21 @@ func (s *Shell) applyStylesOnce() {
 		}
 		if isRoot && getWindowLong(h, gwlExStyle)&wsExLayered != 0 {
 			if ok, _, err := pSetLayeredWindowAttributes.Call(uintptr(h), 0, uintptr(alpha), lwaAlpha); ok == 0 {
-				log.Printf("SetLayeredWindowAttributes 失败: %v", err)
+				// 分层窗口没有设置成功 alpha 就不会被绘制（整个窗口消失）：退回非分层，宁可不透明也不能看不见
+				log.Printf("SetLayeredWindowAttributes 失败: %v；退回非分层窗口", err)
+				cur := getWindowLong(h, gwlExStyle)
+				setWindowLong(h, gwlExStyle, cur&^(wsExLayered|wsExTransparent))
+				pSetWindowPos.Call(uintptr(h), 0, 0, 0, 0, 0, swpNoMove|swpNoSize|swpNoZOrder|swpNoActivate|swpFrameChanged)
+				st.layered, st.transparent = false, false
+				s.ctState[h] = st
 			}
 		}
 	}
-	if on != s.lastOn.Load() || interactive != s.interactive {
-		log.Printf("窗口样式：鼠标穿透=%v（功能开启=%v，Ctrl=%v），窗口 %d 个，样式已修改 %d、被系统拒绝 %d，根窗口扩展样式=%#x，透明度=%d",
-			on, ct, ctrl, len(targets), changed, failed, getWindowLong(root, gwlExStyle), alpha)
+	exNow := getWindowLong(root, gwlExStyle)
+	if on != s.lastOn.Load() || interactive != s.interactive || int(alpha) != s.lastAlpha || exNow != s.lastEx {
+		log.Printf("窗口样式：鼠标穿透=%v（功能开启=%v，Ctrl=%v），样式已修改 %d、被系统拒绝 %d，根窗口扩展样式=%#x，透明度=%d",
+			on, ct, ctrl, changed, failed, exNow, alpha)
+		s.lastAlpha, s.lastEx = int(alpha), exNow
 	}
 	s.lastOn.Store(on)
 	if interactive != s.interactive {
