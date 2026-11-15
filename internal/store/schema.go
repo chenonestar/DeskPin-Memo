@@ -6,7 +6,7 @@ import (
 )
 
 // CurrentSchemaVersion 为数据库结构版本（NFR-11）。
-const CurrentSchemaVersion = 4
+const CurrentSchemaVersion = 5
 
 // 时间一律以 UTC 毫秒时间戳（INTEGER）存储，显示时按本地时区转换。
 // hlc / device_id / field_hlc / deleted 为 V3 同步预留字段，V1 建表即创建并维护。
@@ -130,6 +130,50 @@ CREATE INDEX idx_subtasks_hlc  ON subtasks(hlc);
 	// 把等于旧默认值的记录还原为「跟随默认」；用户明确选过的其他颜色 / 透明度保持不变。
 	`UPDATE windows SET color='' WHERE lower(color)='#fff3b0' OR color='';
 UPDATE windows SET opacity=0 WHERE opacity>=0.999;`,
+	// v5：摸鱼功能——RSS 订阅（FR-701~707）与桌面宠物（FR-801~810）。均为本机数据，不参与同步，不含同步字段。
+	`
+CREATE TABLE feeds (
+  id            TEXT PRIMARY KEY,
+  url           TEXT NOT NULL UNIQUE,
+  title         TEXT NOT NULL DEFAULT '',
+  custom_title  INTEGER NOT NULL DEFAULT 0,   -- 用户改过名字：拉取时不再用源里的标题覆盖
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  preset        INTEGER NOT NULL DEFAULT 0,
+  sort_order    REAL NOT NULL DEFAULT 0,
+  etag          TEXT NOT NULL DEFAULT '',
+  last_modified TEXT NOT NULL DEFAULT '',
+  last_fetch_at INTEGER,
+  last_ok_at    INTEGER,
+  last_error    TEXT NOT NULL DEFAULT '',
+  fail_count    INTEGER NOT NULL DEFAULT 0,
+  next_fetch_at INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL
+);
+CREATE TABLE feed_items (
+  id           TEXT PRIMARY KEY,
+  feed_id      TEXT NOT NULL,
+  guid         TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  link         TEXT NOT NULL,
+  summary      TEXT NOT NULL DEFAULT '',
+  published_at INTEGER NOT NULL,
+  fetched_at   INTEGER NOT NULL,
+  read         INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (feed_id, guid)
+);
+CREATE INDEX idx_feed_items_pub ON feed_items(published_at);
+CREATE TABLE pet (
+  id          INTEGER PRIMARY KEY CHECK (id = 1),
+  name        TEXT NOT NULL,
+  exp         INTEGER NOT NULL DEFAULT 0,
+  accessory   TEXT NOT NULL DEFAULT '',
+  glasses     TEXT NOT NULL DEFAULT 'round',
+  completed   INTEGER NOT NULL DEFAULT 0,  -- 陪你完成的事项数
+  pats        INTEGER NOT NULL DEFAULT 0,
+  snacks      INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL
+);
+`,
 }
 
 func migrate(db *sql.DB, backup func() error) error {

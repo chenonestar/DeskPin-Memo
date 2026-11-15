@@ -2,6 +2,7 @@ package app
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"deskpinmemo/internal/scheduler"
@@ -383,5 +384,54 @@ func TestResetWindowPositionBringsBackHiddenSticky(t *testing.T) {
 	}
 	if !sh.ClickThrough {
 		t.Fatal("穿透状态应保持")
+	}
+}
+
+func TestBossModeSwitchesGroupAndBack(t *testing.T) {
+	a, _ := newApp(t)
+	var events []string
+	a.Emit = func(ev string, _ any) { events = append(events, ev) }
+	a.ApplyWindow()
+	home := a.CurrentGroup()
+	work, _ := a.CreateGroup("工作", "")
+	// 没有设置切换分组：只切换模式
+	if on, _ := a.ToggleBossMode(); !on || a.CurrentGroup() != home {
+		t.Fatal(on, a.CurrentGroup())
+	}
+	_, _ = a.ToggleBossMode()
+	s := a.GetSettings()
+	s.BossGroupID = work.ID
+	a.SaveSettings(s)
+	events = nil
+	if on, _ := a.ToggleBossMode(); !on || a.CurrentGroup() != work.ID {
+		t.Fatal("进入正经模式时切到指定分组", a.CurrentGroup())
+	}
+	if !slices.Contains(events, "group:show") || !slices.Contains(events, "boss:changed") {
+		t.Fatal(events)
+	}
+	if on, _ := a.ToggleBossMode(); on || a.CurrentGroup() != home {
+		t.Fatal("退出时切回原分组", a.CurrentGroup())
+	}
+	// 指定的分组被删除：不切换也不报错
+	_ = a.DeleteGroup(work.ID)
+	if on, err := a.ToggleBossMode(); !on || err != nil || a.CurrentGroup() != home {
+		t.Fatal(on, err)
+	}
+}
+
+func TestOpenNewsItemUsesBrowserOnlyForWebLinks(t *testing.T) {
+	a, sh := newApp(t)
+	st := a.Service().Store()
+	f, _ := st.AddFeed("https://a.com/feed", "A", false)
+	_, _ = st.SaveFeedItems(f.ID, []store.NewFeedItem{{GUID: "1", Title: "好", Link: "https://a.com/1"}, {GUID: "2", Title: "坏", Link: "javascript:alert(1)"}})
+	items, _ := a.NewsItems("", 10)
+	for _, it := range items {
+		err := a.OpenNewsItem(it.ID)
+		if it.Title == "好" && (err != nil || sh.Opened != "https://a.com/1") {
+			t.Fatal(err, sh.Opened)
+		}
+		if it.Title == "坏" && (err == nil || sh.Opened == it.Link) {
+			t.Fatal("非 http(s) 链接不能交给浏览器")
+		}
 	}
 }

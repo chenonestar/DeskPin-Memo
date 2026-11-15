@@ -25,6 +25,18 @@ type Dump struct {
 	DeviceID      string                      `json:"device_id"`
 	Tables        map[string][]map[string]any `json:"tables"`
 	Settings      map[string]json.RawMessage  `json:"settings,omitempty"`
+	// 摸鱼功能：订阅列表（不含新闻条目，随时可重新拉取）与宠物。均为可选字段，旧版本导出文件没有它们。
+	Feeds []ExportFeed `json:"feeds,omitempty"`
+	Pet   *Pet         `json:"pet,omitempty"`
+}
+
+// ExportFeed 是导出的订阅源。
+type ExportFeed struct {
+	URL         string `json:"url"`
+	Title       string `json:"title"`
+	CustomTitle bool   `json:"customTitle,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	Preset      bool   `json:"preset,omitempty"`
 }
 
 func (s *Store) dumpTable(name string) ([]map[string]any, error) {
@@ -94,6 +106,18 @@ func (s *Store) Export() (*Dump, error) {
 		return nil, err
 	}
 	d.Settings = set
+	feeds, err := s.ListFeeds()
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range feeds {
+		d.Feeds = append(d.Feeds, ExportFeed{URL: f.URL, Title: f.Title, CustomTitle: f.CustomTitle, Enabled: f.Enabled, Preset: f.Preset})
+	}
+	if p, ok, err := s.GetPet(); err != nil {
+		return nil, err
+	} else if ok {
+		d.Pet = &p
+	}
 	return d, nil
 }
 
@@ -218,6 +242,41 @@ func (s *Store) Import(d *Dump, mode ImportMode) (ImportStats, error) {
 				}
 				if h := str(r["hlc"]); h != "" {
 					s.clock.Observe(h)
+				}
+			}
+		}
+		// 订阅源按地址合并（已有的保持不变）；宠物：覆盖导入时替换，合并导入时只在本机还没有宠物时导入
+		if mode == ImportOverwrite {
+			for _, q := range []string{`DELETE FROM feed_items`, `DELETE FROM feeds`} {
+				if _, err := tx.Exec(q); err != nil {
+					return err
+				}
+			}
+		}
+		for i, f := range d.Feeds {
+			if f.URL == "" {
+				continue
+			}
+			if _, err := tx.Exec(`INSERT OR IGNORE INTO feeds(id,url,title,custom_title,enabled,preset,sort_order,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+				newID(), f.URL, f.Title, b2i(f.CustomTitle), b2i(f.Enabled), b2i(f.Preset), float64(i+1), s.nowMs()); err != nil {
+				return err
+			}
+		}
+		if p := d.Pet; p != nil && p.Name != "" {
+			var n int
+			_ = tx.QueryRow(`SELECT COUNT(*) FROM pet`).Scan(&n)
+			if n == 0 || mode == ImportOverwrite {
+				if p.CreatedAt == 0 {
+					p.CreatedAt = s.nowMs()
+				}
+				if p.Glasses == "" {
+					p.Glasses = "round"
+				}
+				if _, err := tx.Exec(`INSERT INTO pet(id,name,exp,accessory,glasses,completed,pats,snacks,created_at) VALUES(1,?,?,?,?,?,?,?,?)
+					ON CONFLICT(id) DO UPDATE SET name=excluded.name, exp=excluded.exp, accessory=excluded.accessory, glasses=excluded.glasses,
+					completed=excluded.completed, pats=excluded.pats, snacks=excluded.snacks, created_at=excluded.created_at`,
+					p.Name, p.Exp, p.Accessory, p.Glasses, p.Completed, p.Pats, p.Snacks, p.CreatedAt); err != nil {
+					return err
 				}
 			}
 		}

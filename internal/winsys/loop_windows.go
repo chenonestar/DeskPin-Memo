@@ -29,12 +29,14 @@ const (
 	CmdQuit         = 4
 	CmdClickThrough = 5
 	CmdResetPos     = 6
+	CmdBoss         = 7
 )
 
 const (
 	hotkeyQuick     = 1
 	hotkeyToggle    = 2
 	hotkeyClickThru = 3
+	hotkeyBoss      = 4
 	wmRunOnLoop     = wmUser + 2
 	wmSettingChange = 0x001A
 	wmInput         = 0x00FF
@@ -55,10 +57,12 @@ type Callbacks struct {
 	OnQuick        func()
 	OnToggle       func()
 	OnClickThrough func()
-	OnResume       func() // 睡眠唤醒（FR-306）
-	OnTimeChange   func() // 系统时间 / 时区改变（NFR-05）
-	OnTaskbar      func() // 资源管理器重启（AC-03）
-	OnDisplay      func() // 显示器配置变化
+	OnBoss         func()      // 正经模式（老板键）
+	BossOn         func() bool // 托盘菜单勾选状态
+	OnResume       func()      // 睡眠唤醒（FR-306）
+	OnTimeChange   func()      // 系统时间 / 时区改变（NFR-05）
+	OnTaskbar      func()      // 资源管理器重启（AC-03）
+	OnDisplay      func()      // 显示器配置变化
 	OnMenu         func(cmd int)
 	OnEndSession   func()
 	OnCtrl         func()      // Ctrl 键按下 / 抬起（仅在鼠标穿透开启期间才会收到）
@@ -305,14 +309,15 @@ func ParseHotkey(s string) (mods uint32, vk uint32, err error) {
 }
 
 // RegisterHotkeys 注册（或重新注册）全局热键。注册失败即判定冲突（7.3），返回冲突说明。
-func (l *Loop) RegisterHotkeys(quick, toggle, clickThrough string) (conflicts []string) {
+func (l *Loop) RegisterHotkeys(quick, toggle, clickThrough, boss string) (conflicts []string) {
 	done := make(chan []string, 1)
 	l.do(func() {
 		var out []string
 		pUnregisterHotKey.Call(uintptr(l.hwnd), hotkeyQuick)
 		pUnregisterHotKey.Call(uintptr(l.hwnd), hotkeyToggle)
 		pUnregisterHotKey.Call(uintptr(l.hwnd), hotkeyClickThru)
-		for id, hk := range map[uintptr]string{hotkeyQuick: quick, hotkeyToggle: toggle, hotkeyClickThru: clickThrough} {
+		pUnregisterHotKey.Call(uintptr(l.hwnd), hotkeyBoss)
+		for id, hk := range map[uintptr]string{hotkeyQuick: quick, hotkeyToggle: toggle, hotkeyClickThru: clickThrough, hotkeyBoss: boss} {
 			mods, vk, err := ParseHotkey(hk)
 			if err != nil {
 				out = append(out, fmt.Sprintf("%s：%v", hk, err))
@@ -358,6 +363,8 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 			safe(l.cb.OnToggle)
 		case hotkeyClickThru:
 			safe(l.cb.OnClickThrough)
+		case hotkeyBoss:
+			safe(l.cb.OnBoss)
 		}
 		return 0
 	case wmPowerBroadcast:
@@ -398,7 +405,7 @@ func wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case wmCommand:
-		if cmd := int(wParam & 0xFFFF); cmd >= CmdNew && cmd <= CmdResetPos && l.cb.OnMenu != nil {
+		if cmd := int(wParam & 0xFFFF); cmd >= CmdNew && cmd <= CmdBoss && l.cb.OnMenu != nil {
 			c := cmd
 			go l.cb.OnMenu(c)
 		}
@@ -431,6 +438,11 @@ func (l *Loop) showMenu() {
 	}
 	pAppendMenuW.Call(m, ctFlag, CmdClickThrough, uintptr(unsafe.Pointer(utf16("鼠标穿透（按住 Ctrl 临时操作）"))))
 	add(CmdResetPos, "便签回到默认位置")
+	bossFlag := uintptr(mfString)
+	if l.cb.BossOn != nil && l.cb.BossOn() {
+		bossFlag |= mfChecked
+	}
+	pAppendMenuW.Call(m, bossFlag, CmdBoss, uintptr(unsafe.Pointer(utf16("正经模式（收起新闻、狗狗、倒计时）"))))
 	add(CmdSettings, "设置")
 	pAppendMenuW.Call(m, mfSeparator, 0, 0)
 	add(CmdQuit, "退出")

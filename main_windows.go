@@ -78,7 +78,7 @@ func main() {
 		return
 	}
 	defer st.Close()
-	svc, err := service.New(st, dataDir, service.Options{ConfigDir: cfgDir, Portable: portable, Fallback: res.Fallback})
+	svc, err := service.New(st, dataDir, service.Options{ConfigDir: cfgDir, Portable: portable, Fallback: res.Fallback, SystemProxy: winsys.SystemProxy(), Version: version})
 	if err != nil {
 		log.Printf("初始化服务失败: %v", err)
 		fatalDialog("初始化失败：" + err.Error())
@@ -173,7 +173,9 @@ func (d *daemon) init(ctx context.Context) {
 		OnQuick:        d.app.OpenQuick,
 		OnToggle:       func() { d.app.ToggleVisible() },
 		OnClickThrough: func() { _, _ = d.app.ToggleClickThrough() },
-		OnResume:       func() { log.Print("系统唤醒：重新计算提醒"); d.sched.Kick(); sh.Repin() },
+		OnBoss:         func() { _, _ = d.app.ToggleBossMode() },
+		BossOn:         d.app.BossMode,
+		OnResume:       func() { log.Print("系统唤醒：重新计算提醒"); d.sched.Kick(); sh.Repin(); d.svc.NewsResume() },
 		OnTimeChange:   func() { log.Print("系统时间变更：重新计算提醒"); d.sched.Kick() },
 		OnTaskbar:      func() { log.Print("资源管理器重启：重新钉在桌面"); sh.Repin() },
 		OnDisplay:      func() { sh.SetBounds(sh.Bounds()) },
@@ -218,6 +220,7 @@ func (d *daemon) init(ctx context.Context) {
 	sh.SetVisible(true) // 开机自启（--autostart）与手动启动一样静默显示便签（SW_SHOWNOACTIVATE，不抢焦点）
 	sh.SetOverdueBadge(d.svc.Store().CountOverdue())
 	go d.sched.Run(d.ctx)
+	go d.svc.RunNews(d.ctx)   // 摸鱼：RSS 新闻（设置里没开启时不联网）
 	d.app.MaybeShowOverview() // FR-308：当天首次启动时弹出今日概览
 
 	// 冷启动时由协议链接（通知按钮）拉起：处理命令行参数
@@ -252,7 +255,7 @@ func (d *daemon) applySettings(s service.Settings) {
 }
 
 func (d *daemon) registerHotkeys(s service.Settings) {
-	if conflicts := d.loop.RegisterHotkeys(s.HotkeyQuick, s.HotkeyToggle, s.HotkeyClickThrough); len(conflicts) > 0 {
+	if conflicts := d.loop.RegisterHotkeys(s.HotkeyQuick, s.HotkeyToggle, s.HotkeyClickThrough, s.HotkeyBoss); len(conflicts) > 0 {
 		log.Printf("快捷键冲突: %v", conflicts)
 		d.svc.Emit("hotkey:conflict", conflicts) // 冲突时提示（FR-501）
 	}
@@ -266,6 +269,8 @@ func (d *daemon) menu(cmd int) {
 		d.app.ToggleVisible()
 	case winsys.CmdClickThrough:
 		_, _ = d.app.ToggleClickThrough()
+	case winsys.CmdBoss:
+		_, _ = d.app.ToggleBossMode()
 	case winsys.CmdResetPos:
 		_, _ = d.app.ResetWindowPosition()
 	case winsys.CmdSettings:

@@ -4,11 +4,13 @@ package service
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"deskpinmemo/internal/feed"
 	"deskpinmemo/internal/nlp"
 	"deskpinmemo/internal/recur"
 	"deskpinmemo/internal/scheduler"
@@ -37,6 +39,8 @@ type Service struct {
 	OnOverdue    func(count int)              // 托盘红点
 	OnSettings   func(Settings)               // 设置变更（快捷键、自启、透明度…）
 	OnStrongShow func(n scheduler.Notification)
+
+	news newsRuntime // RSS 新闻订阅
 }
 
 type undoEntry struct {
@@ -55,12 +59,21 @@ type Options struct {
 	Portable  bool
 	// Fallback 为启动时数据目录回退的说明，界面会提示用户。
 	Fallback string
+	// RSS：测试注入的 HTTP 传输层；「跟随系统代理」时使用的代理函数（为空读环境变量）；版本号（User-Agent）。
+	HTTPTransport http.RoundTripper
+	SystemProxy   feed.ProxyFunc
+	Version       string
 }
 
 // New 创建服务。dataDir 为 %APPDATA%\DeskPinMemo。
 func New(st *store.Store, dataDir string, opts ...Options) (*Service, error) {
 	s := &Service{st: st, dataDir: dataDir, now: time.Now, loc: func() *time.Location { return time.Local }}
 	s.configDir = dataDir
+	var o Options
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	s.initNews(o)
 	if len(opts) > 0 {
 		if opts[0].ConfigDir != "" {
 			s.configDir = opts[0].ConfigDir
@@ -512,15 +525,20 @@ func (s *Service) Toggle(id string, done bool) (ItemView, error) {
 		return ItemView{}, err
 	}
 	var nextID string
+	petExp := 0
 	if done && before.Status != store.StatusDone {
 		if nextID, err = s.spawnNext(before); err != nil {
 			return ItemView{}, err
 		}
+		petExp = s.petOnComplete() // 狗狗叼走一根骨头（FR-804）
+	} else if !done && before.Status == store.StatusDone && s.GetSettings().PetEnabled {
+		s.petUndoComplete(PetExpPerItem) // 取消完成：经验扣回，避免反复勾选「刷经验」
 	}
 	s.pushUndo("完成", func() error {
 		if _, err := s.st.SetDone(id, before.Status == store.StatusDone); err != nil {
 			return err
 		}
+		s.petUndoComplete(petExp)
 		if nextID != "" {
 			return s.st.PurgeItem(nextID)
 		}
@@ -769,8 +787,10 @@ func (s *Service) SaveSettings(in Settings) (Settings, error) {
 		return in, err
 	}
 	s.mu.Lock()
+	old := s.settings
 	s.settings = in
 	s.mu.Unlock()
+	s.onNewsSettings(old, in)
 	s.OnSettings(in)
 	s.Emit("settings:changed", in)
 	s.Kick()

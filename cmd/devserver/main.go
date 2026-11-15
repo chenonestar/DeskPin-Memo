@@ -71,7 +71,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer st.Close()
-	svc, err := service.New(st, *dir, service.Options{Portable: *portable})
+	svc, err := service.New(st, *dir, service.Options{Portable: *portable, Version: "dev", SystemProxy: http.ProxyFromEnvironment})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -100,6 +100,7 @@ func main() {
 		OnFired:       func() { h.emit("data:changed", nil) }})
 	svc.Kick = sched.Kick
 	go sched.Run(context.Background())
+	go svc.RunNews(context.Background())
 	if *seed {
 		seedData(svc)
 	}
@@ -159,15 +160,45 @@ func main() {
 		if r.Method == http.MethodPost {
 			var in struct {
 				Native *bool `json:"native"`
+				Idle   *int  `json:"idle"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			if in.Native != nil {
 				shell.Native = *in.Native
 			}
+			if in.Idle != nil {
+				shell.Idle = *in.Idle
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"native": shell.Native, "opacity": shell.Opacity,
-			"background": shell.Background, "radius": shell.Radius, "clickThrough": shell.ClickThrough})
+			"background": shell.Background, "radius": shell.Radius, "clickThrough": shell.ClickThrough, "opened": shell.Opened, "idle": shell.Idle})
+	})
+	// 假的 RSS 源（端到端测试用，不依赖外网）：GET 返回内容，POST 设置内容；/__dev/feed/fail 一直返回 503
+	fakeFeeds := struct {
+		sync.Mutex
+		m map[string][]byte
+	}{m: map[string][]byte{}}
+	mux.HandleFunc("/__dev/feed/", func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Path[len("/__dev/feed/"):]
+		if name == "fail" {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		fakeFeeds.Lock()
+		defer fakeFeeds.Unlock()
+		if r.Method == http.MethodPost {
+			b, _ := io.ReadAll(r.Body)
+			fakeFeeds.m[name] = b
+			return
+		}
+		b, ok := fakeFeeds.m[name]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
+		w.Write(b)
 	})
 	mux.HandleFunc("/__dev/emit", func(w http.ResponseWriter, r *http.Request) {
 		var v any

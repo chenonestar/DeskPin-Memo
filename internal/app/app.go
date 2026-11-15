@@ -34,6 +34,8 @@ type App struct {
 	alerts      int           // 尚未处理的强提醒数量（期间需要鼠标交互，暂停鼠标穿透）
 	lastOpacity OpacityResult // 最近一次记入日志的实际透明度（变化时才记）
 	faded       bool          // 鼠标是否不在便签上（「鼠标离开后自动变淡」）；启动时假定鼠标不在
+	boss        bool          // 正经模式（老板键）：收起新闻条、宠物、倒计时
+	bossPrev    string        // 进入正经模式前显示的分组（切到了指定分组时，退出时切回）
 	Version     string
 	Emit        func(event string, data any)
 }

@@ -45,6 +45,8 @@ type Shell interface {
 	// Restart 退出并重新启动程序（切换数据目录后需要）。
 	Restart() error
 	OpenPath(path string) error
+	// IdleSeconds 返回用户多久没有动过鼠标 / 键盘（整个系统，不只是本窗口）；宠物据此打盹。
+	IdleSeconds() int
 	SetOverdueBadge(n int)
 	Beep()
 	Quit()
@@ -64,6 +66,8 @@ type NopShell struct {
 	reg          *regtrace.MemRegistry // 模拟的注册表（开发服务器 / 测试）
 	EmptyReg     bool                  // 模拟的注册表初始为空（模拟「绿色版默认零写入」）
 	ClickThrough bool
+	Opened       string // 最近一次 OpenPath（开发服务器 / 测试据此确认「用浏览器打开了哪个链接」）
+	Idle         int    // 模拟的系统空闲秒数
 }
 
 func (n *NopShell) SetMode(m string) error                                { n.Mode = m; return nil }
@@ -84,7 +88,8 @@ func (n *NopShell) SetCornerRadius(d int)                                 { n.Ra
 func (n *NopShell) SetClickThrough(on bool)                               { n.ClickThrough = on }
 func (n *NopShell) PickFolder(string) (string, error)                     { return "", nil }
 func (n *NopShell) Restart() error                                        { n.Restarted = true; return nil }
-func (n *NopShell) OpenPath(string) error                                 { return nil }
+func (n *NopShell) OpenPath(p string) error                               { n.Opened = p; return nil }
+func (n *NopShell) IdleSeconds() int                                      { return n.Idle }
 func (n *NopShell) SetOverdueBadge(c int)                                 { n.Overdue = c }
 func (n *NopShell) Beep()                                                 {}
 func (n *NopShell) Quit()                                                 {}
