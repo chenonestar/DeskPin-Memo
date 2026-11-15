@@ -14,7 +14,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # ubuntu-latest 已是 26.04，当前 Playwright 不支持在其上安装浏览器
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -82,7 +82,7 @@ jobs:
     # 手动触发时由 Release 一并创建标签 v<版本号>（指向本次构建的提交）。
     if: startsWith(github.ref, 'refs/tags/v') || inputs.release_version != ''
     needs: windows
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # ubuntu-latest 已是 26.04，当前 Playwright 不支持在其上安装浏览器
     permissions:
       contents: write
     steps:
