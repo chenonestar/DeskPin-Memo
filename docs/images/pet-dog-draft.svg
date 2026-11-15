@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- 戴眼镜的狗狗（形象初稿）：垂耳小狗 + 黑框圆眼镜。纯矢量，无外部素材 -->
+  <!-- 尾巴 -->
+  <path d="M142 156 C164 152 172 132 166 120" fill="none" stroke="#E39A4F" stroke-width="12" stroke-linecap="round"/>
+  <!-- 身体 -->
+  <ellipse cx="100" cy="156" rx="44" ry="36" fill="#E39A4F"/>
+  <ellipse cx="100" cy="164" rx="26" ry="24" fill="#FFF1DC"/>
+  <!-- 前爪 -->
+  <ellipse cx="81" cy="188" rx="13" ry="8" fill="#FFF1DC" stroke="#C97C35" stroke-width="2"/>
+  <ellipse cx="119" cy="188" rx="13" ry="8" fill="#FFF1DC" stroke="#C97C35" stroke-width="2"/>
+  <!-- 头 -->
+  <ellipse cx="100" cy="76" rx="50" ry="46" fill="#E39A4F"/>
+  <!-- 垂耳（深色、下垂，贴在头两侧） -->
+  <path d="M58 46 C38 46 30 72 34 98 C36 112 50 114 56 102 C62 88 64 64 70 52 Z" fill="#9A5B2E"/>
+  <path d="M142 46 C162 46 170 72 166 98 C164 112 150 114 144 102 C138 88 136 64 130 52 Z" fill="#9A5B2E"/>
+  <!-- 额头白斑 -->
+  <path d="M100 34 C94 46 92 60 96 70 L104 70 C108 60 106 46 100 34 Z" fill="#FFF1DC"/>
+  <!-- 眉点（柴犬「麻吕眉」） -->
+  <ellipse cx="80" cy="56" rx="5" ry="3" fill="#FFF1DC"/>
+  <ellipse cx="120" cy="56" rx="5" ry="3" fill="#FFF1DC"/>
+  <!-- 眼睛 -->
+  <circle cx="80" cy="78" r="6" fill="#2B2A24"/>
+  <circle cx="120" cy="78" r="6" fill="#2B2A24"/>
+  <circle cx="82" cy="76" r="2" fill="#fff"/>
+  <circle cx="122" cy="76" r="2" fill="#fff"/>
+  <!-- 嘴套（突出的浅色口鼻部） -->
+  <ellipse cx="100" cy="104" rx="26" ry="19" fill="#FFF1DC"/>
+  <!-- 腮红 -->
+  <ellipse cx="66" cy="100" rx="7" ry="4.5" fill="#F7A9A0" opacity="0.75"/>
+  <ellipse cx="134" cy="100" rx="7" ry="4.5" fill="#F7A9A0" opacity="0.75"/>
+  <!-- 眼镜：黑框圆镜片 + 镜片反光 -->
+  <g fill="rgba(255,255,255,0.12)" stroke="#2B2A24" stroke-width="4">
+    <circle cx="80" cy="78" r="15"/>
+    <circle cx="120" cy="78" r="15"/>
+  </g>
+  <path d="M95 77 Q100 72 105 77" fill="none" stroke="#2B2A24" stroke-width="4" stroke-linecap="round"/>
+  <path d="M65 75 L54 70 M135 75 L146 70" stroke="#2B2A24" stroke-width="4" stroke-linecap="round"/>
+  <path d="M71 71 L76 67" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+  <path d="M111 71 L116 67" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+  <!-- 大鼻头 -->
+  <ellipse cx="100" cy="96" rx="9" ry="6.5" fill="#2B2A24"/>
+  <ellipse cx="97" cy="94" rx="3" ry="1.6" fill="#fff" opacity="0.6"/>
+  <!-- 嘴 + 吐舌头 -->
+  <path d="M100 102 L100 108 M100 108 Q92 115 86 109 M100 108 Q108 115 114 109" fill="none" stroke="#2B2A24" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M94 111 Q94 124 100 124 Q106 124 106 111 Z" fill="#F07C7C" stroke="#2B2A24" stroke-width="2"/>
+  <path d="M100 113 L100 120" stroke="#C85A5A" stroke-width="1.5" stroke-linecap="round"/>
+</svg>
