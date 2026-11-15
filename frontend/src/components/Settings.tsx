@@ -5,9 +5,10 @@ import { t } from '../i18n/zh-CN'
 import { hotkeyFromEvent } from '../format'
 import { ConfirmDialog, Modal } from './Dialog'
 import { Icon } from './Icon'
+import { FunPane } from './FunSettings'
 
-type Tab = 'general' | 'appearance' | 'reminder' | 'hotkey' | 'data' | 'about'
-const TABS: [Tab, string][] = [['general', '常规'], ['appearance', '外观'], ['reminder', '提醒'], ['hotkey', '快捷键'], ['data', '数据'], ['about', '关于']]
+type Tab = 'general' | 'appearance' | 'reminder' | 'hotkey' | 'fun' | 'data' | 'about'
+const TABS: [Tab, string][] = [['general', '常规'], ['appearance', '外观'], ['reminder', '提醒'], ['hotkey', '快捷键'], ['fun', '摸鱼'], ['data', '数据'], ['about', '关于']]
 const COLORS = ['#FFF3B0', '#D9F2C9', '#CFE8FF', '#FFD9E4', '#E4D9FF', '#E8E8E8']
 
 interface Props {
@@ -64,6 +65,7 @@ export function Settings({ settings, groups, onSettings, reloadGroups, onClose, 
           {tab === 'appearance' && <Appearance s={settings} patch={patch} clickThrough={!!win?.clickThrough} />}
           {tab === 'reminder' && <Reminder s={settings} patch={patch} />}
           {tab === 'hotkey' && <Hotkeys s={settings} patch={patch} conflict={conflict} />}
+          {tab === 'fun' && <FunPane s={settings} patch={patch} groups={groups} onSettings={onSettings} />}
           {tab === 'data' && <DataPane />}
           {tab === 'about' && <About />}
         </div>
@@ -72,9 +74,9 @@ export function Settings({ settings, groups, onSettings, reloadGroups, onClose, 
   )
 }
 
-type P = { s: S; patch: (p: Partial<S> | ((cur: S) => Partial<S>)) => Promise<void> }
+export type P = { s: S; patch: (p: Partial<S> | ((cur: S) => Partial<S>)) => Promise<void> }
 
-function Check({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+export function Check({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <div className="rowline">
       <label htmlFor={`c-${label}`}>{label}</label>
@@ -176,7 +178,7 @@ function Reminder({ s, patch }: P) {
   )
 }
 
-function HotkeyInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+export function HotkeyInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   const [rec, setRec] = useState(false)
   return (
     <div className="rowline">
@@ -203,6 +205,7 @@ function Hotkeys({ s, patch, conflict }: P & { conflict: string[] }) {
       <HotkeyInput label="快速新建" value={s.hotkeyQuick} onChange={(v) => void patch({ hotkeyQuick: v })} />
       <HotkeyInput label="显示/隐藏全部便签" value={s.hotkeyToggle} onChange={(v) => void patch({ hotkeyToggle: v })} />
       <HotkeyInput label="切换鼠标穿透" value={s.hotkeyClickThrough} onChange={(v) => void patch({ hotkeyClickThrough: v })} />
+      <HotkeyInput label="正经模式（老板键）" value={s.hotkeyBoss} onChange={(v) => void patch({ hotkeyBoss: v })} />
       {conflict.length > 0 && <div className="err" role="alert" data-testid="hotkey-conflict">{conflict.map((c) => t('hotkeyConflict', { msg: c })).join('；')}</div>}
       <div className="hint">点击后按下组合键（需含 Ctrl / Alt / Shift / Win 之一）。注册失败即表示与其他程序冲突。</div>
       <h4>窗口内快捷键</h4>

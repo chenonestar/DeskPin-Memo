@@ -117,6 +117,101 @@ export interface Settings {
   hotkeyToggle: string
   hotkeyClickThrough: string
   dailyOverview: boolean
+  // 摸鱼
+  newsEnabled: boolean
+  newsSetupDone: boolean
+  newsInterval: number
+  newsProxy: 'system' | 'none' | 'manual'
+  newsProxyUrl: string
+  petEnabled: boolean
+  petCorner: 'right' | 'left'
+  petBubbles: boolean
+  petWorry: boolean
+  showCountdown: boolean
+  workStart: string
+  workEnd: string
+  monthlySalary: number
+  hotkeyBoss: string
+  bossGroupId: string
+}
+
+export interface Feed {
+  id: string
+  url: string
+  title: string
+  customTitle: boolean
+  enabled: boolean
+  preset: boolean
+  lastFetchAt: number | null
+  lastOkAt: number | null
+  lastError: string
+  failCount: number
+  nextFetchAt: number
+  createdAt: number
+  itemCount: number
+  unread: number
+}
+
+export interface NewsItem {
+  id: string
+  feedId: string
+  feedTitle: string
+  title: string
+  link: string
+  summary: string
+  publishedAt: number
+  fetchedAt: number
+  read: boolean
+}
+
+export interface FeedPreset {
+  category: string
+  name: string
+  url: string
+  default: boolean
+  added: boolean
+}
+
+export interface FeedTest {
+  ok: boolean
+  title: string
+  count: number
+  latest: string
+  error: string
+}
+
+export type PetAccessory = '' | 'bow' | 'scarf' | 'hat' | 'crown'
+export type PetGlasses = 'round' | 'square' | 'sunglasses' | 'gold'
+
+export interface Pet {
+  name: string
+  exp: number
+  accessory: PetAccessory
+  glasses: PetGlasses
+  completed: number
+  pats: number
+  snacks: number
+  createdAt: number
+  level: number
+  levelFloor: number
+  levelNext: number
+  days: number
+  accessories: PetAccessory[]
+  glassesList: PetGlasses[]
+}
+
+export interface PetStatus {
+  pet: Pet
+  overdue: number
+  todayTotal: number
+  todayLeft: number
+}
+
+export interface PetEvent {
+  kind: 'fed'
+  exp: number
+  levelUp: boolean
+  pet: Pet
 }
 
 export interface EncStatus {

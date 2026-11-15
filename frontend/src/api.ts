@@ -4,6 +4,7 @@
 import type {
   Bootstrap, RegTrace, DataDirChange, DataDirStatus, DirInfo, Overview, EncStatus, Group, GroupView, ImportInfo, ImportStats, Item, ItemPatch, NewItem,
   Notification, QuickPreview, ReminderInput, Settings, Subtask, WindowState, WinMode,
+  Feed, FeedPreset, FeedTest, NewsItem, Pet, PetStatus,
 } from './types'
 
 type Fn = (...args: unknown[]) => Promise<unknown>
@@ -154,6 +155,32 @@ export const api = {
   deleteOldBackups: () => call<number>('DeleteOldBackups'),
 
   quit: () => call<void>('Quit'),
+
+  // 摸鱼：RSS 新闻
+  feedPresets: () => call<FeedPreset[]>('FeedPresets'),
+  setupNews: (urls: string[]) => call<Settings>('SetupNews', urls),
+  listFeeds: () => call<Feed[]>('ListFeeds'),
+  addFeed: (url: string) => call<Feed>('AddFeed', url),
+  updateFeed: (id: string, title: string | null, enabled: boolean | null) => call<Feed>('UpdateFeed', id, title, enabled),
+  deleteFeed: (id: string) => call<void>('DeleteFeed', id),
+  refreshNews: () => call<number>('RefreshNews'),
+  testFeed: (url: string) => call<FeedTest>('TestFeed', url),
+  newsItems: (feedId: string, limit: number) => call<NewsItem[]>('NewsItems', feedId, limit),
+  newsUnread: () => call<number>('NewsUnread'),
+  openNewsItem: (id: string) => call<void>('OpenNewsItem', id),
+  markAllNewsRead: (feedId: string) => call<void>('MarkAllNewsRead', feedId),
+  // 摸鱼：狗狗
+  getPet: () => call<Pet>('GetPet'),
+  petStatus: () => call<PetStatus>('PetStatus'),
+  renamePet: (name: string) => call<Pet>('RenamePet', name),
+  patPet: () => call<Pet>('PatPet'),
+  givePetSnack: () => call<Pet>('GivePetSnack'),
+  resetPet: () => call<Pet>('ResetPet'),
+  setPetLook: (acc: string, glasses: string) => call<Pet>('SetPetLook', acc, glasses),
+  idleSeconds: () => call<number>('IdleSeconds'),
+  // 摸鱼：正经模式
+  bossMode: () => call<boolean>('BossMode'),
+  toggleBossMode: () => call<boolean>('ToggleBossMode'),
 }
 
 export type StrongAlert = Notification

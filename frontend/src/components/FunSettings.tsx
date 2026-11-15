@@ -1,0 +1,192 @@
+import { useCallback, useEffect, useState } from 'react'
+import { api, on } from '../api'
+import type { Feed, FeedPreset, FeedTest, Group, Pet, Settings as S } from '../types'
+import { ago } from '../fun'
+import { Check, type P } from './Settings'
+import { ConfirmDialog, Modal, PromptDialog } from './Dialog'
+
+/** 设置 → 摸鱼：新闻订阅、狗狗、下班倒计时、正经模式。 */
+export function FunPane({ s, patch, groups, onSettings }: P & { groups: Group[]; onSettings: (s: S) => void }) {
+  return (
+    <>
+      <News s={s} patch={patch} onSettings={onSettings} />
+      <PetSection s={s} patch={patch} />
+      <h4>下班倒计时</h4>
+      <Check label="在便签底部显示下班倒计时" checked={s.showCountdown} onChange={(v) => void patch({ showCountdown: v })} />
+      <div className="rowline"><label htmlFor="ws">上班时间</label>
+        <input id="ws" type="time" value={s.workStart} onChange={(e) => e.target.value && void patch({ workStart: e.target.value })} /></div>
+      <div className="rowline"><label htmlFor="we">下班时间</label>
+        <input id="we" type="time" value={s.workEnd} onChange={(e) => e.target.value && void patch({ workEnd: e.target.value })} /></div>
+      <div className="rowline"><label htmlFor="sal">月薪（可不填）</label>
+        <input id="sal" type="number" min={0} step={100} style={{ width: 110 }} value={s.monthlySalary || ''} placeholder="不显示已赚"
+          onChange={(e) => void patch({ monthlySalary: Math.max(0, Number(e.target.value) || 0) })} /></div>
+      <div className="hint">填了月薪会显示「今天已赚 ¥…」（按每月 21.75 个计薪日折算），只保存在本机。狗狗到下班时间会伸懒腰。周末不倒计时。</div>
+      <h4>正经模式（老板键）</h4>
+      <div className="rowline"><label htmlFor="bossg">同时切换到分组</label>
+        <select id="bossg" value={s.bossGroupId} onChange={(e) => void patch({ bossGroupId: e.target.value })}>
+          <option value="">不切换</option>
+          {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select></div>
+      <div className="hint">按 {s.hotkeyBoss}（可在「快捷键」页修改）或托盘菜单「正经模式」：新闻条、狗狗、倒计时一键收起；再按一次恢复。</div>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------- 新闻订阅
+
+function News({ s, patch, onSettings }: P & { onSettings: (s: S) => void }) {
+  const [feeds, setFeeds] = useState<Feed[]>([])
+  const [picker, setPicker] = useState<FeedPreset[] | null>(null)
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+  const [tests, setTests] = useState<Record<string, FeedTest | 'pending'>>({})
+  const [renaming, setRenaming] = useState<Feed | null>(null)
+  const [deleting, setDeleting] = useState<Feed | null>(null)
+
+  const load = useCallback(() => { void api.listFeeds().then(setFeeds).catch(() => undefined) }, [])
+  useEffect(load, [load])
+  useEffect(() => on('feeds:changed', load), [load])
+
+  const openPicker = async () => setPicker(await api.feedPresets())
+  const enable = async (v: boolean) => {
+    if (v && !s.newsSetupDone) { await openPicker(); return } // 首次开启：先选预置订阅源
+    await patch({ newsEnabled: v })
+  }
+  const add = async () => {
+    setErr(''); setMsg(''); setBusy(true)
+    try {
+      const f = await api.addFeed(url)
+      setUrl('')
+      setMsg(f.lastError ? `已添加，但首次拉取失败：${f.lastError}` : `已添加「${f.title || f.url}」`)
+      load()
+    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+  const refresh = async () => {
+    setBusy(true); setMsg('')
+    try { const n = await api.refreshNews(); setMsg(n > 0 ? `新增 ${n} 条` : '没有新内容'); load() } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+  const test = async (f: Feed) => {
+    setTests((t) => ({ ...t, [f.id]: 'pending' }))
+    const r = await api.testFeed(f.url)
+    setTests((t) => ({ ...t, [f.id]: r }))
+  }
+
+  return (
+    <>
+      <h4>新闻订阅（RSS）</h4>
+      <Check label="启用新闻订阅（会联网）" checked={s.newsEnabled} onChange={(v) => void enable(v)} />
+      <div className="hint">关闭时程序不发出任何网络请求。开启后只访问下面列出的订阅地址，每隔一段时间拉取一次（RSS 不是实时推送）。</div>
+      {s.newsEnabled && (
+        <>
+          <div className="rowline"><label htmlFor="niv">更新间隔</label>
+            <select id="niv" value={s.newsInterval} onChange={(e) => void patch({ newsInterval: Number(e.target.value) })}>
+              {[15, 30, 60].map((n) => <option key={n} value={n}>每 {n} 分钟</option>)}
+            </select></div>
+          <div className="rowline"><label htmlFor="npx">网络代理</label>
+            <select id="npx" value={s.newsProxy} onChange={(e) => void patch({ newsProxy: e.target.value as S['newsProxy'] })}>
+              <option value="system">跟随系统</option><option value="none">不使用代理</option><option value="manual">手动设置</option>
+            </select></div>
+          {s.newsProxy === 'manual' && (
+            <div className="rowline"><label htmlFor="npu">代理地址</label>
+              <input id="npu" defaultValue={s.newsProxyUrl} placeholder="127.0.0.1:7890" onBlur={(e) => void patch({ newsProxyUrl: e.target.value.trim() })} /></div>
+          )}
+          <div className="hint">公司网络需要代理时选「跟随系统」（读取 Windows 设置里的手动代理）。只配置了自动代理脚本（PAC）的网络暂不支持，请手动填写代理地址。</div>
+
+          <div className="rowline" style={{ marginTop: 8 }}>
+            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="粘贴 RSS 订阅地址" aria-label="订阅地址" data-testid="feed-url"
+              onKeyDown={(e) => { if (e.key === 'Enter' && url.trim()) void add() }} style={{ flex: 1 }} />
+            <button className="btn" disabled={!url.trim() || busy} onClick={() => void add()} data-testid="feed-add">添加</button>
+          </div>
+          <div className="rowline">
+            <button className="btn" onClick={() => void openPicker()} data-testid="feed-presets">预置订阅源…</button>
+            <button className="btn" disabled={busy || feeds.length === 0} onClick={() => void refresh()} data-testid="feed-refresh">立即刷新</button>
+          </div>
+          {err && <div className="err" role="alert">{err}</div>}
+          {msg && <div className="hint" data-testid="feed-msg">{msg}</div>}
+          {feeds.length === 0 && <div className="hint">还没有订阅。可以从「预置订阅源」里挑，或粘贴自己常看的网站的 RSS 地址。</div>}
+          {feeds.map((f) => {
+            const tr = tests[f.id]
+            return (
+              <div key={f.id} className="feedrow" data-testid="feed-row">
+                <div className="top">
+                  <input type="checkbox" checked={f.enabled} aria-label={`启用 ${f.title || f.url}`} onChange={(e) => void api.updateFeed(f.id, null, e.target.checked).then(load)} />
+                  <b title={f.title}>{f.title || '（尚未获取标题）'}</b>
+                  <button className="iconlink" onClick={() => void test(f)}>测试</button>
+                  <button className="iconlink" onClick={() => setRenaming(f)}>改名</button>
+                  <button className="iconlink" onClick={() => setDeleting(f)}>删除</button>
+                </div>
+                <div className="url">{f.url}</div>
+                <div data-testid="feed-status">
+                  {!f.enabled ? <span className="hint">已停用</span>
+                    : f.lastError ? <span className="bad">✗ {f.lastError}{f.failCount > 1 ? `（连续 ${f.failCount} 次）` : ''}</span>
+                    : f.lastOkAt ? <span className="ok">✓ {ago(f.lastOkAt)}更新 · {f.itemCount} 条{f.unread ? `，${f.unread} 条未读` : ''}</span>
+                    : <span className="hint">等待第一次拉取</span>}
+                </div>
+                {tr && <div data-testid="feed-test">{tr === 'pending' ? '正在测试…' : tr.ok ? <span className="ok">连接正常：{tr.title}，{tr.count} 条{tr.latest ? `，最新「${tr.latest}」` : ''}</span> : <span className="bad">连接失败：{tr.error}</span>}</div>}
+              </div>
+            )
+          })}
+        </>
+      )}
+      {picker && <PresetPicker presets={picker} first={!s.newsSetupDone} onCancel={() => setPicker(null)}
+        onOk={async (urls) => { setPicker(null); const next = await api.setupNews(urls); onSettings(next); load() }} />}
+      {renaming && <PromptDialog title="订阅源改名" label="名字（留空恢复使用网站自己的标题）" initial={renaming.customTitle ? renaming.title : ''}
+        onOk={async (v) => { await api.updateFeed(renaming.id, v, null); setRenaming(null); load() }} onCancel={() => setRenaming(null)} />}
+      {deleting && <ConfirmDialog title="删除订阅源" message={`删除「${deleting.title || deleting.url}」及其全部新闻？`} okText="删除"
+        onOk={async () => { await api.deleteFeed(deleting.id); setDeleting(null); load() }} onCancel={() => setDeleting(null)} />}
+    </>
+  )
+}
+
+function PresetPicker({ presets, first, onOk, onCancel }: { presets: FeedPreset[]; first: boolean; onOk: (urls: string[]) => void; onCancel: () => void }) {
+  const [sel, setSel] = useState<Set<string>>(() => new Set(presets.filter((p) => !p.added && first && p.default).map((p) => p.url)))
+  const toggle = (u: string) => setSel((s) => { const n = new Set(s); if (n.has(u)) n.delete(u); else n.add(u); return n })
+  return (
+    <Modal title={first ? '开启新闻订阅：选择订阅源' : '添加预置订阅源'} onClose={onCancel} footer={<>
+      <button className="btn" onClick={onCancel}>取消</button>
+      <button className="btn primary" onClick={() => onOk([...sel])} data-testid="preset-ok">{first ? '开启' : '添加'}{sel.size ? `（${sel.size}）` : ''}</button>
+    </>}>
+      <div className="presetlist" data-testid="preset-list">
+        {presets.map((p) => (
+          <label key={p.url}>
+            <input type="checkbox" disabled={p.added} checked={p.added || sel.has(p.url)} onChange={() => toggle(p.url)} aria-label={p.name} />
+            <span className="cat">{p.category}</span><span>{p.name}{p.added ? '（已订阅）' : ''}</span>
+          </label>
+        ))}
+      </div>
+      <div className="hint" style={{ marginTop: 6 }}>这些地址来自各网站公开的 RSS，是否能打开取决于你的网络；添加后可在列表里「测试」。也可以一个都不选，之后再添加自己的订阅。</div>
+    </Modal>
+  )
+}
+
+// ---------------------------------------------------------------- 狗狗
+
+function PetSection({ s, patch }: P) {
+  const [pet, setPet] = useState<Pet | null>(null)
+  const [reset, setReset] = useState(false)
+  const load = useCallback(() => { if (s.petEnabled) void api.getPet().then(setPet).catch(() => undefined) }, [s.petEnabled])
+  useEffect(load, [load])
+  useEffect(() => on('pet:changed', load), [load])
+  return (
+    <>
+      <h4>狗狗</h4>
+      <Check label="养一只戴眼镜的狗狗" checked={s.petEnabled} onChange={(v) => void patch({ petEnabled: v })} />
+      {s.petEnabled && pet && (
+        <>
+          <div className="hint" data-testid="pet-summary">{pet.name} · Lv.{pet.level} · 陪伴 {pet.days} 天 · 帮你完成 {pet.completed} 件事。完成事项会给它加经验，升级解锁新装扮；在便签上点它摸头，右键可以改名、换装。</div>
+          <div className="rowline"><label htmlFor="pc">位置</label>
+            <select id="pc" value={s.petCorner} onChange={(e) => void patch({ petCorner: e.target.value as S['petCorner'] })}>
+              <option value="right">右下角</option><option value="left">左下角</option>
+            </select></div>
+          <Check label="偶尔说句话（每小时最多一次）" checked={s.petBubbles} onChange={(v) => void patch({ petBubbles: v })} />
+          <Check label="有逾期事项时露出担心的表情" checked={s.petWorry} onChange={(v) => void patch({ petWorry: v })} />
+          <div className="rowline"><button className="btn" onClick={() => setReset(true)}>重置成长进度…</button></div>
+        </>
+      )}
+      {reset && <ConfirmDialog title="重置成长进度" message="等级、经验、装扮和名字都会恢复初始状态。" okText="重置"
+        onOk={async () => { setPet(await api.resetPet()); setReset(false) }} onCancel={() => setReset(false)} />}
+    </>
+  )
+}

@@ -83,7 +83,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .iconbtn.on { color: var(--accent); }
 .icon { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
+.bodywrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 .body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
+.body.withpet { padding-bottom: 70px; } /* 最后几行可以滚到狗狗上方，不被挡住 */
 .body::-webkit-scrollbar { width: 6px; }
 .body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
 .list { list-style: none; margin: 0; padding: 0; }
@@ -237,3 +239,77 @@ mark { background: rgba(255, 200, 0, 0.55); color: inherit; border-radius: 2px; 
 .reglist code { font-size: 11px; color: var(--fg-dim); word-break: break-all; }
 
 .ctbadge.live { background: var(--ok); }
+
+/* ---------------- 摸鱼：狗狗 ---------------- */
+.pet { position: absolute; bottom: 2px; z-index: 4; display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; }
+.pet.right { right: 6px; }
+.pet.left { left: 6px; align-items: flex-start; }
+.petbtn { pointer-events: auto; width: 64px; height: 64px; padding: 0; border-radius: 50%; }
+.petbtn:focus-visible { outline: 2px solid var(--accent); }
+.petbubble { pointer-events: auto; max-width: 180px; margin-bottom: 2px; padding: 5px 9px; font-size: 12px; line-height: 1.4;
+  background: var(--card); color: var(--card-fg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  animation: pop 0.2s ease-out; cursor: pointer; }
+.petstats { padding: 2px 12px 6px; font-size: 12px; color: var(--fg-dim); line-height: 1.6; }
+@keyframes pop { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.dog { overflow: visible; display: block; }
+.dog .dog-all { transform-origin: 100px 190px; animation: breathe 3.2s ease-in-out infinite; }
+.dog .dog-tail { transform-origin: 142px 156px; animation: wag 1.6s ease-in-out infinite; }
+.dog .dog-head { transform-origin: 100px 110px; }
+.dog .dog-eyes { transform-origin: 100px 78px; animation: blink 5s infinite; }
+.dog.mood-normal .dog-head { animation: tilt 9s ease-in-out infinite; }
+.dog.mood-happy .dog-tail, .dog.mood-celebrate .dog-tail { animation-duration: 0.35s; }
+.dog.mood-happy .dog-all { animation: hop 0.6s ease-in-out 2; }
+.dog.mood-celebrate .dog-all { animation: jump 0.7s ease-in-out infinite; }
+.dog.mood-worried .dog-ear-l { transform-origin: 62px 50px; transform: rotate(10deg); }
+.dog.mood-worried .dog-ear-r { transform-origin: 138px 50px; transform: rotate(-10deg); }
+.dog.mood-worried .dog-tail { animation: none; transform: rotate(18deg); }
+.dog.mood-sleeping .dog-all, .dog.mood-dozing .dog-all { animation: breathe 4.5s ease-in-out infinite; }
+.dog.mood-sleeping .dog-tail, .dog.mood-dozing .dog-tail { animation: none; transform: rotate(30deg); }
+.dog.mood-dozing .dog-head { animation: nod 4s ease-in-out infinite; }
+.dog.mood-offwork .dog-all { animation: stretch 2.4s ease-in-out infinite; }
+.dog .dog-zzz { animation: float 2.4s ease-in-out infinite; }
+.dog .dog-fx { animation: fxup 1.6s ease-out forwards; }
+.dog .dog-confetti { animation: fall 2s ease-in forwards; }
+@keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.015, 0.985); } }
+@keyframes wag { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(14deg); } }
+@keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
+@keyframes tilt { 0%, 80%, 100% { transform: rotate(0); } 85%, 92% { transform: rotate(-6deg); } }
+@keyframes hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-10px); } }
+@keyframes jump { 0%, 100% { transform: translateY(0) scale(1); } 30% { transform: translateY(-18px) scale(1.03); } 60% { transform: translateY(0) scale(1.05, 0.95); } }
+@keyframes nod { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(8deg) translateY(4px); } }
+@keyframes stretch { 0%, 100% { transform: scale(1); } 40%, 60% { transform: scale(0.94, 1.08) translateY(-6px); } }
+@keyframes float { 0% { transform: translateY(0); opacity: 0.3; } 50% { opacity: 1; } 100% { transform: translateY(-14px); opacity: 0; } }
+@keyframes fxup { 0% { transform: translateY(8px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-16px); opacity: 0; } }
+@keyframes fall { 0% { transform: translateY(-20px); opacity: 1; } 100% { transform: translateY(120px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .dog * { animation: none !important; } }
+
+/* ---------------- 摸鱼：倒计时 + 新闻条 ---------------- */
+.funbar { display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 8px 4px; font-size: 12px; color: var(--fg-dim); min-width: 0; }
+.cdchip { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ticker { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.tickerline { flex: 1; min-width: 0; display: flex; gap: 6px; align-items: baseline; text-align: left; white-space: nowrap; overflow: hidden; animation: pop 0.25s ease-out; }
+.tickerline > span:first-child { overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.tickerline > span.read { color: var(--fg-dim); }
+.tickerline .src { flex: none; font-size: 11px; color: var(--fg-dim); }
+.tickerline.empty { color: var(--fg-dim); }
+button.tickerline:hover > span:first-child { text-decoration: underline; }
+.newscount { flex: none; min-width: 20px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--bg-2); font-size: 11px; color: var(--fg); }
+.newscount:hover { background: var(--bg-hover); }
+.newslist .newstools { display: flex; gap: 6px; padding: 4px 8px; align-items: center; }
+.newslist .newstools select { max-width: 60%; }
+.newsrow { padding: 5px 10px; cursor: pointer; border-radius: 6px; margin: 0 4px; }
+.newsrow:hover { background: var(--bg-hover); }
+.newsrow .title { line-height: 1.4; }
+.newsrow .meta { display: flex; gap: 8px; font-size: 11px; color: var(--fg-dim); }
+.newsrow.read .title { color: var(--fg-dim); }
+.feedrow { padding: 6px 8px; background: var(--bg-2); border-radius: 6px; margin-bottom: 6px; font-size: 12px; }
+.feedrow .top { display: flex; align-items: center; gap: 6px; }
+.feedrow .top b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feedrow .url { color: var(--fg-dim); word-break: break-all; }
+.feedrow .ok { color: var(--ok); }
+.feedrow .bad { color: var(--danger); }
+.feedrow .iconlink { font-size: 12px; color: var(--accent); }
+.presetlist { max-height: 300px; overflow-y: auto; }
+.presetlist label { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
+.presetlist .cat { font-size: 11px; color: var(--fg-dim); width: 32px; flex: none; }

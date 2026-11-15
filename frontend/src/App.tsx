@@ -21,6 +21,7 @@ export default function App() {
   const [groupId, setGroupId] = useState('')
   const [fatal, setFatal] = useState('')
   const [notice, setNotice] = useState('')
+  const [boss, setBoss] = useState(false) // 正经模式（老板键）
 
   const reloadGroups = useCallback(() => { void api.groups().then(setGroups) }, [])
 
@@ -32,6 +33,7 @@ export default function App() {
       setGroupId(gid); setWin(w); setOverlay(ov as Overlay)
       // 自定义数据目录不可用而回退到默认目录时，必须让用户看到：否则会误以为数据丢了
       void api.dataDirStatus().then((d) => d.fallback && setNotice(d.fallback))
+      void api.bossMode().then(setBoss).catch(() => undefined)
     } catch (e) { setFatal((e as Error).message) }
   }, [])
 
@@ -41,6 +43,7 @@ export default function App() {
   useEffect(() => on('sse:open', () => { void api.overlay().then((k) => setOverlay(k as Overlay)) }), [])
   useEffect(() => on('window:state', (w) => setWin(w as WindowState)), []) // 托盘菜单切换鼠标穿透等
   useEffect(() => on('settings:changed', (s) => setSettings(s as SettingsT)), [])
+  useEffect(() => on('boss:changed', (b) => setBoss(!!b)), [])
   useEffect(() => on('lock:changed', (l) => { setLocked(!!l); if (!l) void init() }), [init])
   useEffect(() => on('data:changed', reloadGroups), [reloadGroups])
   useEffect(() => on('reminder:strong', (n) => setAlerts((a) => [...a, n as Notification])), [])
@@ -74,7 +77,7 @@ export default function App() {
         <LockScreen onUnlocked={() => setLocked(false)} />
       ) : (
         <Sticky groups={groups} settings={settings} win={win} setWin={setWin} reloadGroups={reloadGroups}
-          onOpenSettings={() => void api.openSettings()} />
+          onOpenSettings={() => void api.openSettings()} boss={boss} />
       )}
       {notice && <div className="banner" role="alert" style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 90, cursor: 'pointer' }} data-testid="datadir-notice" onClick={() => setNotice('')}>{notice}</div>}
       {alerts.length > 0 && <StrongAlert n={alerts[0]} onHandled={() => { setAlerts((a) => a.slice(1)); void api.strongAlertDone() }} />}

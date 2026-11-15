@@ -12,6 +12,9 @@ import { ItemDialog } from './ItemDialog'
 import { ConfirmDialog, PromptDialog } from './Dialog'
 import type { QuickPreview } from '../types'
 import { formatDue } from '../format'
+import { FunBar } from './FunBar'
+import { NewsList } from './NewsList'
+import { PetCorner } from './Pet'
 
 type View =
   | { kind: 'group'; id: string }
@@ -19,6 +22,7 @@ type View =
   | { kind: 'tag'; tag: string }
   | { kind: 'search' }
   | { kind: 'trash' }
+  | { kind: 'news' }
 
 const SMART_LABEL: Record<string, string> = {
   today: t('viewToday'), overdue: t('viewOverdue'), next7: t('viewNext7'), nodate: t('viewNoDate'), done: t('viewDone'),
@@ -33,9 +37,11 @@ interface Props {
   setWin: (w: WindowState) => void
   reloadGroups: () => void
   onOpenSettings: () => void
+  /** 正经模式（老板键）：收起新闻条、狗狗、倒计时 */
+  boss?: boolean
 }
 
-export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSettings }: Props) {
+export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSettings, boss = false }: Props) {
   const [view, setView] = useState<View>({ kind: 'group', id: '' })
   const [todo, setTodo] = useState<Item[]>([])
   const [done, setDone] = useState<Item[]>([])
@@ -57,6 +63,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
   const [ctrlLive, setCtrlLive] = useState(false) // 鼠标穿透开启期间按住 Ctrl：临时可操作
   const [lingering, setLingering] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
+  const [petHidden, setPetHidden] = useState(false) // 右键「暂时收起」：直到下次启动
   const { snack, show, hide } = useSnack()
   const version = useDataVersion()
   const lingerRef = useRef(new Map<string, number>())
@@ -71,6 +78,12 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
   useEffect(() => {
     api.currentGroup().then((id) => setView((v) => (v.kind === 'group' && !v.id ? { kind: 'group', id } : v)))
   }, [])
+  // 后端切换了分组（正经模式切到指定分组 / 切回）
+  useEffect(() => on('group:show', (id) => setView({ kind: 'group', id: id as string })), [])
+  // 正经模式下不留在新闻视图；关掉新闻后也离开
+  useEffect(() => {
+    if (view.kind === 'news' && (boss || !settings.newsEnabled)) setView({ kind: 'group', id: win?.groupId ?? '' })
+  }, [boss, settings.newsEnabled, view.kind, win?.groupId])
 
   const groupId = view.kind === 'group' ? view.id : win?.groupId ?? ''
   const group = groups.find((g) => g.id === groupId)
@@ -92,6 +105,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
         case 'tag': setFlat(await api.byTag(view.tag)); break
         case 'trash': setFlat(await api.trash()); break
         case 'search': setFlat(dq.trim() ? await api.search(dq) : []); break
+        case 'news': break // 新闻视图自己加载（NewsList）
       }
     } catch (e) {
       setError((e as Error).message)
@@ -198,6 +212,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
     entries.push({ kind: 'sep' }, { kind: 'header', label: t('views') })
     ;(['today', 'overdue', 'next7', 'nodate', 'done'] as const).forEach((n) =>
       entries.push({ kind: 'item', label: SMART_LABEL[n], checked: view.kind === 'smart' && view.name === n, onClick: () => setView({ kind: 'smart', name: n }) }))
+    if (settings.newsEnabled && !boss) entries.push({ kind: 'item', label: '新闻', checked: view.kind === 'news', onClick: () => setView({ kind: 'news' }) })
     entries.push({ kind: 'sep' })
     entries.push({ kind: 'item', label: t('trash'), onClick: () => setView({ kind: 'trash' }) })
     setMenu({ x: r.left, y: r.bottom + 2, entries })
@@ -326,7 +341,8 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
     view.kind === 'group' ? group?.name ?? '' :
     view.kind === 'smart' ? SMART_LABEL[view.name] :
     view.kind === 'tag' ? '#' + view.tag :
-    view.kind === 'search' ? t('search') : t('trash')
+    view.kind === 'search' ? t('search') :
+    view.kind === 'news' ? '新闻' : t('trash')
 
   const style = {
     // 窗口自己没单独设置颜色 / 透明度（空 / 0）时跟随设置里的默认值
@@ -335,6 +351,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
     '--win-opacity': win?.nativeOpacity ? '1' : String(win?.opacity || settings.opacity),
     '--faded-opacity': String(settings.fadedOpacity || 0.4),
   } as React.CSSProperties
+  const showPet = settings.petEnabled && !boss && !petHidden
   const modeIcon = win?.mode === 'top' ? 'top' : win?.mode === 'normal' ? 'window' : 'pin'
   const native = !!win?.nativeOpacity
   const faded = !native && settings.fadeOnLeave && !win?.clickThrough && !hovered // 原生模式下的变淡由外壳处理
@@ -381,8 +398,9 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
               {flat.length > 0 && <button className="btn" onClick={() => setConfirm({ title: t('emptyTrash'), message: t('emptyTrashConfirm'), onOk: async () => { setConfirm(null); await api.emptyTrash() } })}>{t('emptyTrash')}</button>}
             </div>
           )}
-          <div className="body">
-            {view.kind === 'group' ? (
+          <div className="bodywrap">
+          <div className={`body ${showPet ? 'withpet' : ''}`}>
+            {view.kind === 'news' ? <NewsList /> : view.kind === 'group' ? (
               <>
                 {shown.length === 0 && doneShown.length === 0 && <div className="empty">{t('emptyList')}</div>}
                 {shown.length > 0 && (
@@ -418,6 +436,8 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
               </ul>
             )}
           </div>
+          {showPet && <PetCorner settings={settings} onHide={() => setPetHidden(true)} />}
+          </div>
 
           {snack && (
             <div className="snack" role="status" data-testid="snack">
@@ -426,7 +446,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
             </div>
           )}
 
-          {view.kind !== 'trash' && view.kind !== 'search' && (
+          {view.kind !== 'trash' && view.kind !== 'search' && view.kind !== 'news' && (
             <div className="addbar">
               {preview && draft.trim() && (preview.dueAt != null || preview.tags.length > 0 || preview.repeatDesc || preview.groupId !== groupId) && (
                 <div className="preview" data-testid="preview">
@@ -442,6 +462,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
                 aria-label="添加事项" data-testid="add-input" />
             </div>
           )}
+          {!boss && <FunBar settings={settings} onOpenNews={() => setView({ kind: 'news' })} />}
           {!win?.locked && <div className="grip" onMouseDown={(e) => { e.preventDefault(); void api.beginResize() }} aria-hidden="true" />}
         </>
       )}
