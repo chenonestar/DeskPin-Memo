@@ -272,10 +272,7 @@ func (s *Store) Import(d *Dump, mode ImportMode) (ImportStats, error) {
 				if p.Glasses == "" {
 					p.Glasses = "round"
 				}
-				if _, err := tx.Exec(`INSERT INTO pet(id,name,exp,accessory,glasses,completed,pats,snacks,created_at) VALUES(1,?,?,?,?,?,?,?,?)
-					ON CONFLICT(id) DO UPDATE SET name=excluded.name, exp=excluded.exp, accessory=excluded.accessory, glasses=excluded.glasses,
-					completed=excluded.completed, pats=excluded.pats, snacks=excluded.snacks, created_at=excluded.created_at`,
-					p.Name, p.Exp, p.Accessory, p.Glasses, p.Completed, p.Pats, p.Snacks, p.CreatedAt); err != nil {
+				if _, err := tx.Exec(savePetSQL, petArgs(*p)...); err != nil {
 					return err
 				}
 			}

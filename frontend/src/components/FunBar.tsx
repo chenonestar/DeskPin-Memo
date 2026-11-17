@@ -68,6 +68,8 @@ function NewsTicker({ settings, onOpenNews }: { settings: Settings; onOpenNews: 
     return () => clearInterval(id)
   }, [paused, items.length])
 
+  // 通知狗狗：新闻换标题了（它会偶尔推一下眼镜）
+  useEffect(() => { if (items.length > 1) window.dispatchEvent(new Event('deskpin:news-rotate')) }, [idx, items.length])
   const cur = items[idx]
   return (
     <span className="ticker" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} data-testid="news-ticker">

@@ -273,3 +273,39 @@ func TestFunSettingsNormalize(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestPetNamingPlaysAndWater(t *testing.T) {
+	e := setup(t, time.Date(2026, 11, 16, 10, 0, 0, 0, cst))
+	p, _ := e.svc.GetPet()
+	if p.Name != "博士" || p.Named {
+		t.Fatalf("默认名「博士」，尚未确认: %+v", p)
+	}
+	if p, _ = e.svc.RenamePet("摸摸"); !p.Named || p.Name != "摸摸" {
+		t.Fatal(p)
+	}
+	if p, _ = e.svc.PlayBall(); p.Plays != 1 {
+		t.Fatal(p)
+	}
+	_, _ = e.svc.DrinkWater()
+	if p, _ = e.svc.DrinkWater(); p.WaterToday != 2 {
+		t.Fatal(p.WaterToday)
+	}
+	*e.now = e.now.Add(24 * time.Hour)
+	if p, _ = e.svc.GetPet(); p.WaterToday != 0 {
+		t.Fatal("第二天还没喝时为 0", p.WaterToday)
+	}
+	if p, _ = e.svc.DrinkWater(); p.WaterToday != 1 {
+		t.Fatal(p.WaterToday)
+	}
+	if p, _ = e.svc.ResetPet(); p.Named || p.Name != "博士" || p.Plays != 0 {
+		t.Fatalf("重置后重新起名: %+v", p)
+	}
+	s := e.svc.GetSettings()
+	if !s.PetHoliday || s.PetWater || s.PetWaterInterval != 45 || s.PetWaterNotify || s.CountdownMoney != "hover" {
+		t.Fatalf("默认值: %+v", s)
+	}
+	s.PetWaterInterval = 7
+	if got, _ := e.svc.SaveSettings(s); got.PetWaterInterval != 45 {
+		t.Fatal(got.PetWaterInterval)
+	}
+}

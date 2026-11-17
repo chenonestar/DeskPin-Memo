@@ -435,3 +435,23 @@ func TestOpenNewsItemUsesBrowserOnlyForWebLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestPetNotifyOnlyWhenEnabled(t *testing.T) {
+	a, _ := newApp(t)
+	var got []string
+	a.Notify = func(title, body string) { got = append(got, title+"|"+body) }
+	_ = a.PetNotify("喝口水吧")
+	s := a.GetSettings()
+	s.PetEnabled, s.PetWater = true, true
+	a.SaveSettings(s)
+	_ = a.PetNotify("喝口水吧")
+	if len(got) != 0 {
+		t.Fatal("没开「同时弹系统通知」时不发", got)
+	}
+	s.PetWaterNotify = true
+	a.SaveSettings(s)
+	_ = a.PetNotify("喝口水吧")
+	if len(got) != 1 || got[0] != "博士提醒你|喝口水吧" {
+		t.Fatal(got)
+	}
+}

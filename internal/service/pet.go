@@ -20,7 +20,7 @@ const PetMaxLevel = 10
 const PetExpPerItem = 10
 
 // PetDefaultName 是默认名字。
-const PetDefaultName = "眼镜"
+const PetDefaultName = "博士"
 
 // petUnlock：配饰 / 眼镜款式及解锁等级。
 var (
@@ -75,7 +75,10 @@ type PetView struct {
 	Days        int      `json:"days"`      // 陪伴天数（从 1 开始）
 	Accessories []string `json:"accessories"`
 	GlassesList []string `json:"glassesList"`
+	WaterToday  int      `json:"waterToday"` // 今天喝了几杯（日期不是今天时为 0）
 }
+
+func (s *Service) today() string { return s.now().In(s.loc()).Format("2006-01-02") }
 
 func (s *Service) petView(p store.Pet) PetView {
 	v := PetView{Pet: p}
@@ -85,6 +88,9 @@ func (s *Service) petView(p store.Pet) PetView {
 	y1, m1, d1 := time.UnixMilli(p.CreatedAt).In(loc).Date()
 	y2, m2, d2 := s.now().In(loc).Date()
 	v.Days = int(time.Date(y2, m2, d2, 0, 0, 0, 0, time.UTC).Sub(time.Date(y1, m1, d1, 0, 0, 0, 0, time.UTC)).Hours()/24) + 1
+	if p.WaterDate == s.today() {
+		v.WaterToday = p.WaterCount
+	}
 	return v
 }
 
@@ -102,7 +108,7 @@ func (s *Service) GetPet() (PetView, error) {
 	return s.petView(p), nil
 }
 
-// RenamePet 给狗狗改名（1–12 个字）。
+// RenamePet 给狗狗改名（1–12 个字），同时标记为「已起名」（第一次开启时的起名框也调用它）。
 func (s *Service) RenamePet(name string) (PetView, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || utf8.RuneCountInString(name) > 12 {
@@ -112,7 +118,7 @@ func (s *Service) RenamePet(name string) (PetView, error) {
 	if err != nil {
 		return p, err
 	}
-	p.Name = name
+	p.Name, p.Named = name, true
 	saved, err := s.st.SavePet(p.Pet)
 	if err != nil {
 		return PetView{}, err
@@ -158,7 +164,31 @@ func (s *Service) SetPetLook(accessory, glasses string) (PetView, error) {
 	return v, nil
 }
 
-// ResetPet 重置成长进度（名字和装扮也恢复默认）。
+// PlayBall 一起玩了一次球（FR 二期：扔个球）。
+func (s *Service) PlayBall() (PetView, error) {
+	if _, err := s.GetPet(); err != nil {
+		return PetView{}, err
+	}
+	p, _, err := s.st.AddPetPlay()
+	if err != nil {
+		return PetView{}, err
+	}
+	return s.petView(p), nil
+}
+
+// DrinkWater 喝水提醒点了「好了」：今天的杯数加一。
+func (s *Service) DrinkWater() (PetView, error) {
+	if _, err := s.GetPet(); err != nil {
+		return PetView{}, err
+	}
+	p, _, err := s.st.AddPetWater(s.today())
+	if err != nil {
+		return PetView{}, err
+	}
+	return s.petView(p), nil
+}
+
+// ResetPet 重置成长进度（名字和装扮也恢复默认，下次显示时重新弹出起名框）。
 func (s *Service) ResetPet() (PetView, error) {
 	saved, err := s.st.SavePet(store.Pet{Name: PetDefaultName})
 	if err != nil {

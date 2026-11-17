@@ -127,6 +127,10 @@ export interface Settings {
   petCorner: 'right' | 'left'
   petBubbles: boolean
   petWorry: boolean
+  petHoliday: boolean
+  petWater: boolean
+  petWaterInterval: number
+  petWaterNotify: boolean
   showCountdown: boolean
   workStart: string
   workEnd: string
@@ -187,6 +191,9 @@ export type PetGlasses = 'round' | 'square' | 'sunglasses' | 'gold'
 
 export interface Pet {
   name: string
+  named: boolean
+  plays: number
+  waterToday: number
   exp: number
   accessory: PetAccessory
   glasses: PetGlasses

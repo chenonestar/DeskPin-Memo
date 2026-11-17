@@ -13,6 +13,8 @@ export interface MoodInput {
   dnd: DND
   workEnd: string
   idleSeconds: number
+  /** 刚被叫醒：暂时不睡 / 不打盹 */
+  awake?: boolean
 }
 
 /** 打盹阈值：30 分钟没动电脑。 */
@@ -39,11 +41,11 @@ export const isWeekday = (d: Date) => d.getDay() >= 1 && d.getDay() <= 5
 export function petMood(i: MoodInput): PetMood {
   if (i.transient) return i.transient
   if (i.worryEnabled && i.overdue > 0) return 'worried'
-  if (i.dnd.enabled && inDailyRange(i.now, i.dnd.start, i.dnd.end)) return 'sleeping'
+  if (!i.awake && i.dnd.enabled && inDailyRange(i.now, i.dnd.start, i.dnd.end)) return 'sleeping'
   const endMin = minutesOf(i.workEnd)
   const endPlus = `${String(Math.floor(((endMin + STRETCH_MINUTES) % 1440) / 60)).padStart(2, '0')}:${String((endMin + STRETCH_MINUTES) % 60).padStart(2, '0')}`
   if (isWeekday(i.now) && inDailyRange(i.now, i.workEnd, endPlus)) return 'offwork'
-  if (i.idleSeconds >= DOZE_AFTER) return 'dozing'
+  if (!i.awake && i.idleSeconds >= DOZE_AFTER) return 'dozing'
   return 'normal'
 }
 
@@ -157,4 +159,104 @@ export function ago(ms: number, now = Date.now()): string {
   if (d < 3_600_000) return `${Math.floor(d / 60_000)} 分钟前`
   if (d < 86_400_000) return `${Math.floor(d / 3_600_000)} 小时前`
   return `${Math.floor(d / 86_400_000)} 天前`
+}
+
+// ---------------------------------------------------------------- 节日装扮（二期）
+
+/** 节日临时配饰。 */
+export type HolidayAccessory = 'partyhat' | 'redscarf' | 'mugwort' | 'bunny' | 'santa'
+
+/**
+ * 农历节日的公历日期（2026–2035）。不在运行时用 Intl 的农历计算：ICU 在朔日接近北京时间午夜的年份会差一天
+ * （例如 2027 春节实为 2 月 6 日、2030 春节实为 2 月 3 日，ICU 给出 2 月 7 日、2 月 2 日），这里以官方公布的日期为准。
+ */
+export const LUNAR_FESTIVALS: Record<number, { spring: string; dragonBoat: string; midAutumn: string }> = {
+  2026: { spring: '2026-02-17', dragonBoat: '2026-06-19', midAutumn: '2026-09-25' },
+  2027: { spring: '2027-02-06', dragonBoat: '2027-06-09', midAutumn: '2027-09-15' },
+  2028: { spring: '2028-01-26', dragonBoat: '2028-05-28', midAutumn: '2028-10-03' },
+  2029: { spring: '2029-02-13', dragonBoat: '2029-06-16', midAutumn: '2029-09-22' },
+  2030: { spring: '2030-02-03', dragonBoat: '2030-06-05', midAutumn: '2030-09-12' },
+  2031: { spring: '2031-01-23', dragonBoat: '2031-06-24', midAutumn: '2031-10-01' },
+  2032: { spring: '2032-02-11', dragonBoat: '2032-06-12', midAutumn: '2032-09-19' },
+  2033: { spring: '2033-01-31', dragonBoat: '2033-06-01', midAutumn: '2033-09-08' },
+  2034: { spring: '2034-02-19', dragonBoat: '2034-06-20', midAutumn: '2034-09-27' },
+  2035: { spring: '2035-02-08', dragonBoat: '2035-06-10', midAutumn: '2035-09-16' },
+}
+
+const dayNum = (d: Date) => Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000)
+const isoDayNum = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000) }
+
+/** 今天该戴的节日配饰（节日当天前后共 3 天；春节为除夕至初七）。中秋与国庆重叠时戴兔耳。 */
+export function holidayOutfit(d: Date): { id: HolidayAccessory; name: string } | null {
+  const n = dayNum(d)
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  const near = (iso: string, before: number, after: number) => { const c = isoDayNum(iso); return n >= c - before && n <= c + after }
+  for (const y of [d.getFullYear(), d.getFullYear() + 1]) { // 除夕可能在上一个公历年的年末（不会发生，但保持对称）
+    const f = LUNAR_FESTIVALS[y]
+    if (!f) continue
+    if (near(f.spring, 1, 6)) return { id: 'redscarf', name: '春节' }
+    if (near(f.dragonBoat, 1, 1)) return { id: 'mugwort', name: '端午' }
+    if (near(f.midAutumn, 1, 1)) return { id: 'bunny', name: '中秋' }
+  }
+  if ((m === 12 && day === 31) || (m === 1 && day <= 2)) return { id: 'partyhat', name: '元旦' }
+  if (m === 10 && day <= 3) return { id: 'redscarf', name: '国庆' }
+  if (m === 12 && day >= 24 && day <= 26) return { id: 'santa', name: '圣诞' }
+  return null
+}
+
+// ---------------------------------------------------------------- 纪念日 / 问候 / 喝水提醒（二期）
+
+/** 陪伴纪念日：第 7、30、100 天，以及每满一年（同月同日）。返回要说的话，不是纪念日返回 null。 */
+export function anniversary(created: Date, now: Date, days: number): string | null {
+  if (days === 7 || days === 30 || days === 100) return `我们认识 ${days} 天啦！`
+  const years = now.getFullYear() - created.getFullYear()
+  if (years > 0 && now.getMonth() === created.getMonth() && now.getDate() === created.getDate()) return `我们认识 ${years} 年啦！`
+  return null
+}
+
+export type Greeting = 'morning' | 'lunch'
+
+/** 工作日的时段问候：上班后 3 小时内第一次出现说「早」，12 点到 13 点说「饭点到啦」。said 为今天已经说过的。 */
+export function dueGreeting(now: Date, workStart: string, said: Set<Greeting>): Greeting | null {
+  if (!isWeekday(now)) return null
+  const t = now.getHours() * 60 + now.getMinutes()
+  const s = minutesOf(workStart)
+  if (!said.has('morning') && t >= s && t < s + 180 && t < 12 * 60) return 'morning'
+  if (!said.has('lunch') && t >= 12 * 60 && t < 13 * 60) return 'lunch'
+  return null
+}
+
+export const GREETING_LINE: Record<Greeting, string> = { morning: '早！今天也一起加油', lunch: '饭点到啦，去吃饭吧～' }
+
+export interface WaterInput {
+  now: Date
+  enabled: boolean
+  intervalMin: number
+  lastAt: number | null // 上次提醒（或「10 分钟后」推算出的）时间
+  workStart: string
+  workEnd: string
+  dnd: DND
+  idleSeconds: number
+  boss: boolean
+}
+
+/** 用户离开电脑超过这么久就不提醒（秒）。 */
+export const WATER_AWAY = 5 * 60
+
+/** 是否该提醒喝水 / 起身：只在工作日上班时间；免打扰、正经模式、离开电脑时不提醒。 */
+export function waterDue(i: WaterInput): boolean {
+  if (!i.enabled || i.boss || !isWeekday(i.now) || i.idleSeconds >= WATER_AWAY) return false
+  if (i.dnd.enabled && inDailyRange(i.now, i.dnd.start, i.dnd.end)) return false
+  if (!inDailyRange(i.now, i.workStart, i.workEnd)) return false
+  const start = new Date(i.now.getFullYear(), i.now.getMonth(), i.now.getDate()).getTime() + minutesOf(i.workStart) * 60_000
+  const from = i.lastAt != null && i.lastAt >= start ? i.lastAt : start // 每天从上班时间重新计时
+  return i.now.getTime() - from >= i.intervalMin * 60_000
+}
+
+export const WATER_LINE = { water: '喝口水吧～', stand: '起来走走、伸个懒腰吧' } as const
+
+/** 连点彩蛋：2 秒内点 5 次。 */
+export function isSneezeCombo(clicks: number[], now: number): boolean {
+  return clicks.filter((t) => now - t <= 2000).length >= 5
 }

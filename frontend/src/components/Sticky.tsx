@@ -436,7 +436,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
               </ul>
             )}
           </div>
-          {showPet && <PetCorner settings={settings} onHide={() => setPetHidden(true)} />}
+          {showPet && <PetCorner settings={settings} boss={boss} onHide={() => setPetHidden(true)} />}
           </div>
 
           {snack && (

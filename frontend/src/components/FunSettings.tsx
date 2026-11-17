@@ -4,6 +4,7 @@ import type { Feed, FeedPreset, FeedTest, Group, Pet, Settings as S } from '../t
 import { ago } from '../fun'
 import { Check, type P } from './Settings'
 import { ConfirmDialog, Modal, PromptDialog } from './Dialog'
+import { NameDialog } from './Pet'
 
 /** 设置 → 摸鱼：新闻订阅、狗狗、下班倒计时、正经模式。 */
 export function FunPane({ s, patch, groups, onSettings }: P & { groups: Group[]; onSettings: (s: S) => void }) {
@@ -170,26 +171,45 @@ function PresetPicker({ presets, first, onOk, onCancel }: { presets: FeedPreset[
 function PetSection({ s, patch }: P) {
   const [pet, setPet] = useState<Pet | null>(null)
   const [reset, setReset] = useState(false)
+  const [naming, setNaming] = useState(false)
   const load = useCallback(() => { if (s.petEnabled) void api.getPet().then(setPet).catch(() => undefined) }, [s.petEnabled])
   useEffect(load, [load])
   useEffect(() => on('pet:changed', load), [load])
+  // 第一次开启：先起名（预填「博士」）
+  useEffect(() => { if (s.petEnabled && pet && !pet.named) setNaming(true) }, [s.petEnabled, pet])
   return (
     <>
       <h4>狗狗</h4>
       <Check label="养一只戴眼镜的狗狗" checked={s.petEnabled} onChange={(v) => void patch({ petEnabled: v })} />
       {s.petEnabled && pet && (
         <>
-          <div className="hint" data-testid="pet-summary">{pet.name} · Lv.{pet.level} · 陪伴 {pet.days} 天 · 帮你完成 {pet.completed} 件事。完成事项会给它加经验，升级解锁新装扮；在便签上点它摸头，右键可以改名、换装。</div>
+          <div className="hint" data-testid="pet-summary">{pet.name} · Lv.{pet.level} · 陪伴 {pet.days} 天 · 帮你完成 {pet.completed} 件事 · 一起玩了 {pet.plays} 次球。完成事项会给它加经验，升级解锁新装扮。在便签上：单击摸头、双击握手、按住拖到另一边、右键扔球 / 换装。</div>
+          <div className="rowline"><label>名字</label><span style={{ flex: 1 }}>{pet.name}</span><button className="btn" onClick={() => setNaming(true)}>改名…</button></div>
           <div className="rowline"><label htmlFor="pc">位置</label>
             <select id="pc" value={s.petCorner} onChange={(e) => void patch({ petCorner: e.target.value as S['petCorner'] })}>
               <option value="right">右下角</option><option value="left">左下角</option>
             </select></div>
           <Check label="偶尔说句话（每小时最多一次）" checked={s.petBubbles} onChange={(v) => void patch({ petBubbles: v })} />
           <Check label="有逾期事项时露出担心的表情" checked={s.petWorry} onChange={(v) => void patch({ petWorry: v })} />
+          <Check label="节日自动装扮（春节、端午、中秋等）" checked={s.petHoliday} onChange={(v) => void patch({ petHoliday: v })} />
+          <Check label="喝水 / 起身提醒" checked={s.petWater} onChange={(v) => void patch({ petWater: v })} />
+          {s.petWater && (
+            <>
+              <div className="rowline"><label htmlFor="pwi">提醒间隔</label>
+                <select id="pwi" value={s.petWaterInterval} onChange={(e) => void patch({ petWaterInterval: Number(e.target.value) })}>
+                  {[30, 45, 60, 90].map((n) => <option key={n} value={n}>每 {n} 分钟</option>)}
+                </select></div>
+              <Check label="同时弹系统通知（便签被挡住时也能看到）" checked={s.petWaterNotify} onChange={(v) => void patch({ petWaterNotify: v })} />
+              <div className="hint">喝水和起身交替提醒，只在工作日的上班时间（{s.workStart}–{s.workEnd}）；免打扰时段、正经模式、离开电脑超过 5 分钟时不提醒。今天喝了 {pet.waterToday} 杯。</div>
+            </>
+          )}
           <div className="rowline"><button className="btn" onClick={() => setReset(true)}>重置成长进度…</button></div>
         </>
       )}
-      {reset && <ConfirmDialog title="重置成长进度" message="等级、经验、装扮和名字都会恢复初始状态。" okText="重置"
+      {naming && pet && <NameDialog initial={pet.name} first={!pet.named}
+        onDone={async (name) => { try { setPet(await api.renamePet(name)); setNaming(false) } catch { /* 名字不合法 */ } }}
+        onCancel={async () => { if (!pet.named) setPet(await api.renamePet(pet.name)); setNaming(false) }} />}
+      {reset && <ConfirmDialog title="重置成长进度" message="等级、经验、装扮和名字都会恢复初始状态，之后重新给它起名。" okText="重置"
         onOk={async () => { setPet(await api.resetPet()); setReset(false) }} onCancel={() => setReset(false)} />}
     </>
   )

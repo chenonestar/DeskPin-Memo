@@ -166,6 +166,11 @@ func (d *daemon) init(ctx context.Context) {
 
 	d.iconPath = winsys.PrepareIcon(d.dataDir) // 只写数据目录
 	d.toaster = &winsys.Toaster{IconPath: d.iconPath}
+	d.app.Notify = func(title, body string) {
+		if err := d.toaster.Notify(scheduler.Notification{Tag: "pet", Title: title, Body: body}); err != nil {
+			log.Printf("发送通知失败: %v", err)
+		}
+	}
 	settings := d.svc.GetSettings()
 	d.applySettings(settings)
 

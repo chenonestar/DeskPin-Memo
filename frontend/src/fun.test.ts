@@ -95,3 +95,77 @@ describe('狗狗说的话', () => {
     expect(petLine(c, 0.999)).toBe('汪！')
   })
 })
+
+import { anniversary, dueGreeting, holidayOutfit, isSneezeCombo, LUNAR_FESTIVALS, waterDue, type WaterInput } from './fun'
+
+describe('节日装扮', () => {
+  const d = (y: number, m: number, day: number) => new Date(y, m - 1, day, 10)
+  it('农历节日：除夕到初七戴红围巾，端午 / 中秋前后各一天', () => {
+    expect(holidayOutfit(d(2027, 2, 5))?.name).toBe('春节') // 除夕
+    expect(holidayOutfit(d(2027, 2, 12))?.name).toBe('春节') // 初七
+    expect(holidayOutfit(d(2027, 2, 13))).toBeNull()
+    expect(holidayOutfit(d(2027, 2, 4))).toBeNull()
+    expect(holidayOutfit(d(2026, 6, 19))).toMatchObject({ id: 'mugwort', name: '端午' })
+    expect(holidayOutfit(d(2026, 9, 26))).toMatchObject({ id: 'bunny', name: '中秋' })
+    expect(holidayOutfit(d(2026, 9, 27))).toBeNull()
+  })
+  it('公历节日；中秋与国庆重叠时戴兔耳', () => {
+    expect(holidayOutfit(d(2026, 12, 31))?.id).toBe('partyhat')
+    expect(holidayOutfit(d(2027, 1, 2))?.id).toBe('partyhat')
+    expect(holidayOutfit(d(2026, 10, 2))).toMatchObject({ id: 'redscarf', name: '国庆' })
+    expect(holidayOutfit(d(2026, 12, 25))?.id).toBe('santa')
+    expect(holidayOutfit(d(2031, 10, 1))?.name).toBe('中秋')
+    expect(holidayOutfit(d(2026, 11, 17))).toBeNull()
+  })
+  it('日期表与 ICU 农历一致，只有已知的两处 ICU 偏差（朔日接近午夜）', () => {
+    const f = new Intl.DateTimeFormat('zh-CN-u-ca-chinese', { month: 'numeric', day: 'numeric' })
+    const lunar = (iso: string) => { const [y, m, dd] = iso.split('-').map(Number); const p = Object.fromEntries(f.formatToParts(new Date(y, m - 1, dd, 12)).map((x) => [x.type, x.value])); return `${p.month}/${p.day}` }
+    const icuOff = new Set(['2027-02-06', '2030-02-03'])
+    for (const v of Object.values(LUNAR_FESTIVALS)) {
+      if (!icuOff.has(v.spring)) expect(lunar(v.spring)).toBe('1/1')
+      expect(lunar(v.dragonBoat)).toBe('5/5')
+      expect(lunar(v.midAutumn)).toBe('8/15')
+    }
+  })
+})
+
+describe('纪念日 / 问候 / 喝水提醒 / 连点', () => {
+  it('纪念日', () => {
+    const c = new Date(2026, 10, 15)
+    expect(anniversary(c, new Date(2026, 10, 21), 7)).toBe('我们认识 7 天啦！')
+    expect(anniversary(c, new Date(2027, 1, 22), 100)).toBe('我们认识 100 天啦！')
+    expect(anniversary(c, new Date(2027, 10, 15), 366)).toBe('我们认识 1 年啦！')
+    expect(anniversary(c, new Date(2026, 10, 20), 6)).toBeNull()
+  })
+  it('时段问候：工作日、每天一次', () => {
+    expect(dueGreeting(at(16, 9, 5), '09:00', new Set())).toBe('morning')
+    expect(dueGreeting(at(16, 8, 50), '09:00', new Set())).toBeNull()
+    expect(dueGreeting(at(16, 9, 5), '09:00', new Set(['morning']))).toBeNull()
+    expect(dueGreeting(at(16, 12, 10), '09:00', new Set(['morning']))).toBe('lunch')
+    expect(dueGreeting(at(21, 12, 10), '09:00', new Set())).toBeNull() // 周六
+  })
+  it('喝水提醒：上班时间按间隔；离开电脑 / 免打扰 / 正经模式 / 周末不提醒', () => {
+    const base: WaterInput = { now: at(16, 9, 44), enabled: true, intervalMin: 45, lastAt: null, workStart: '09:00', workEnd: '18:00',
+      dnd: { enabled: false, start: '22:00', end: '08:00' }, idleSeconds: 0, boss: false }
+    expect(waterDue(base)).toBe(false)
+    expect(waterDue({ ...base, now: at(16, 9, 45) })).toBe(true)
+    expect(waterDue({ ...base, now: at(16, 10, 20), lastAt: at(16, 9, 45).getTime() })).toBe(false)
+    expect(waterDue({ ...base, now: at(16, 10, 30), lastAt: at(16, 9, 45).getTime() })).toBe(true)
+    expect(waterDue({ ...base, now: at(16, 9, 30), lastAt: at(13, 17, 0).getTime() })).toBe(false) // 前一天的记录不算：从今天上班开始计
+    expect(waterDue({ ...base, now: at(16, 10, 0), idleSeconds: 400 })).toBe(false)
+    expect(waterDue({ ...base, now: at(16, 10, 0), boss: true })).toBe(false)
+    expect(waterDue({ ...base, now: at(16, 19, 0) })).toBe(false)
+    expect(waterDue({ ...base, now: at(21, 10, 0) })).toBe(false)
+    expect(waterDue({ ...base, now: at(16, 10, 0), enabled: false })).toBe(false)
+    expect(waterDue({ ...base, now: at(16, 10, 0), dnd: { enabled: true, start: '09:30', end: '11:00' } })).toBe(false)
+  })
+  it('叫醒后暂时不睡', () => {
+    expect(petMood({ ...base, idleSeconds: 4000, awake: true })).toBe('normal')
+    expect(petMood({ ...base, now: at(16, 23), dnd: { enabled: true, start: '22:00', end: '08:00' }, awake: true })).toBe('normal')
+  })
+  it('连点彩蛋', () => {
+    expect(isSneezeCombo([0, 300, 600, 900, 1200], 1300)).toBe(true)
+    expect(isSneezeCombo([0, 300, 600, 900], 1000)).toBe(false)
+    expect(isSneezeCombo([0, 300, 600, 900, 2600], 2700)).toBe(false)
+  })
+})

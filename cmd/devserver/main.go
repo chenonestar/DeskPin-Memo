@@ -78,6 +78,8 @@ func main() {
 	h := &hub{subs: map[chan []byte]struct{}{}}
 	shell := &app.NopShell{R: app.Rect{X: 100, Y: 100, W: 300, H: 420}, Mode: "desktop"}
 	a := app.New(svc, shell, "dev")
+	var notified string // 最近一次系统通知（端到端测试据此确认）
+	a.Notify = func(title, body string) { notified = title + "｜" + body }
 	if *portable {
 		shell.EmptyReg = true
 		var prev *regtrace.State
@@ -172,7 +174,7 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"native": shell.Native, "opacity": shell.Opacity,
-			"background": shell.Background, "radius": shell.Radius, "clickThrough": shell.ClickThrough, "opened": shell.Opened, "idle": shell.Idle})
+			"background": shell.Background, "radius": shell.Radius, "clickThrough": shell.ClickThrough, "opened": shell.Opened, "idle": shell.Idle, "notified": notified})
 	})
 	// 假的 RSS 源（端到端测试用，不依赖外网）：GET 返回内容，POST 设置内容；/__dev/feed/fail 一直返回 503
 	fakeFeeds := struct {

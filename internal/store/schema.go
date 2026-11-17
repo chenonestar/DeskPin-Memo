@@ -6,7 +6,7 @@ import (
 )
 
 // CurrentSchemaVersion 为数据库结构版本（NFR-11）。
-const CurrentSchemaVersion = 5
+const CurrentSchemaVersion = 6
 
 // 时间一律以 UTC 毫秒时间戳（INTEGER）存储，显示时按本地时区转换。
 // hlc / device_id / field_hlc / deleted 为 V3 同步预留字段，V1 建表即创建并维护。
@@ -173,6 +173,15 @@ CREATE TABLE pet (
   snacks      INTEGER NOT NULL DEFAULT 0,
   created_at  INTEGER NOT NULL
 );
+`,
+	// v6：摸鱼二期——狗狗是否已经起过名（第一次开启时弹出起名框）、一起玩球次数、当天喝水杯数。
+	// 默认名字从「眼镜」改为「博士」：还叫旧默认名的自动改名（已有的狗狗视为已起名，不再弹框）。
+	`
+ALTER TABLE pet ADD COLUMN named INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE pet ADD COLUMN plays INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE pet ADD COLUMN water_date TEXT NOT NULL DEFAULT '';
+ALTER TABLE pet ADD COLUMN water_count INTEGER NOT NULL DEFAULT 0;
+UPDATE pet SET name='博士' WHERE name='眼镜';
 `,
 }
 

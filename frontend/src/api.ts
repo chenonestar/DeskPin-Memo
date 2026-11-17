@@ -176,6 +176,9 @@ export const api = {
   patPet: () => call<Pet>('PatPet'),
   givePetSnack: () => call<Pet>('GivePetSnack'),
   resetPet: () => call<Pet>('ResetPet'),
+  playBall: () => call<Pet>('PlayBall'),
+  drinkWater: () => call<Pet>('DrinkWater'),
+  petNotify: (text: string) => call<void>('PetNotify', text),
   setPetLook: (acc: string, glasses: string) => call<Pet>('SetPetLook', acc, glasses),
   idleSeconds: () => call<number>('IdleSeconds'),
   // 摸鱼：正经模式

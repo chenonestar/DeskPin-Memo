@@ -79,48 +79,87 @@ test.describe('摸鱼：RSS 新闻', () => {
   })
 })
 
+const devPost = (page: Page, data: Record<string, unknown>) => page.request.post('/__dev/shell', { data })
+const dogEl = (page: Page) => page.locator('[data-testid=pet-dog] .dog')
+/** 开启狗狗；named=false 时保留「第一次开启」状态（会弹起名框）。 */
+async function enablePet(page: Page, named = true, extra: Record<string, unknown> = {}) {
+  await rpc(page, 'ResetPet')
+  if (named) await rpc(page, 'RenamePet', '博士')
+  await patchSettings(page, { petEnabled: true, petBubbles: true, petWorry: true, petHoliday: true, petCorner: 'right', ...extra })
+}
+
 test.describe('摸鱼：戴眼镜的狗狗', () => {
-  test.afterEach(async ({ page }) => { await cleanupFun(page); await rpc(page, 'ResetPet') })
+  test.afterEach(async ({ page }) => {
+    await devPost(page, { idle: 0 })
+    await cleanupFun(page)
+    await patchSettings(page, { petWater: false, petWaterNotify: false, petHoliday: true, petCorner: 'right' })
+    await rpc(page, 'ResetPet'); await rpc(page, 'RenamePet', '博士')
+  })
 
-  test('摸头、右键菜单、完成事项加经验、逾期担心、换位置、暂时收起', async ({ page }) => {
-    const g = await freshGroup(page)
-    expect(await page.getByTestId('pet').count()).toBe(0)
-    await patchSettings(page, { petEnabled: true, petBubbles: true, petWorry: true })
-    await rpc(page, 'ResetPet')
+  test('第一次开启起名；单击摸头、双击握手、连点打喷嚏、眼睛跟着鼠标', async ({ page }) => {
+    await freshGroup(page)
+    await enablePet(page, false)
+    // 起名框：预填「博士」，可一键选候选名
+    await expect(page.getByTestId('name-input')).toHaveValue('博士')
+    await page.getByRole('button', { name: '摸摸' }).click()
+    await page.getByTestId('name-ok').click()
+    await expect.poll(async () => rpc<{ name: string; named: boolean }>(page, 'GetPet')).toMatchObject({ name: '摸摸', named: true })
+    await expect(page.getByTestId('name-input')).toHaveCount(0)
+
     const dog = page.getByTestId('pet-dog')
-    await expect(dog).toBeVisible()
-    await expect(page.locator('.dog')).toHaveAttribute('data-mood', 'normal')
-
-    await dog.click() // 摸头
+    await dog.click() // 单击：稍等一下才摸头（区分双击）
     await expect(page.locator('[data-fx=hearts]')).toHaveCount(1)
-    await expect(page.locator('.dog')).toHaveAttribute('data-mood', 'happy')
     await expect.poll(async () => (await rpc<{ pats: number }>(page, 'GetPet')).pats).toBe(1)
 
-    // 完成事项：叼走骨头，经验 +10
+    await dog.dblclick() // 双击：握手，不算摸头
+    await expect(dogEl(page)).toHaveAttribute('data-action', 'shake')
+    await expect(page.getByTestId('pet-bubble')).toContainText('握手')
+    await page.waitForTimeout(400)
+    expect((await rpc<{ pats: number }>(page, 'GetPet')).pats).toBe(1)
+
+    await page.waitForTimeout(2100) // 等两秒窗口过去，再连点 5 次
+    for (let i = 0; i < 5; i++) await dog.click({ delay: 10 })
+    await expect(dogEl(page)).toHaveAttribute('data-action', 'sneeze')
+    await expect(page.getByTestId('pet-bubble')).toContainText('阿嚏')
+
+    await expect(dogEl(page)).toHaveAttribute('data-action', '', { timeout: 5000 })
+    await page.mouse.move(5, 200) // 鼠标在狗狗左边 → 眼珠往左
+    await expect(page.locator('[data-testid=pet-dog] [data-look]')).toHaveAttribute('data-look', /^-/)
+  })
+
+  test('打盹时点一下会被叫醒；逾期担心；完成事项加经验；右键统计 / 改名 / 换位置 / 暂时收起', async ({ page }) => {
+    await devPost(page, { idle: 4000 }) // 离开电脑一个多小时
+    const g = await freshGroup(page)
+    await enablePet(page)
+    await expect(dogEl(page)).toHaveAttribute('data-mood', 'dozing')
+    await page.getByTestId('pet-dog').click()
+    await expect(dogEl(page)).toHaveAttribute('data-action', 'rub')
+    await expect(page.getByTestId('pet-bubble')).toContainText('再睡五分钟')
+    await expect(dogEl(page)).not.toHaveAttribute('data-mood', 'dozing')
+    await devPost(page, { idle: 0 })
+
     await rpc(page, 'CreateItem', { title: '写周报', groupId: g.id })
     await rows(page).filter({ hasText: '写周报' }).getByRole('checkbox').click()
     await expect(page.locator('[data-fx=bone]')).toHaveCount(1)
     await expect.poll(async () => (await rpc<{ exp: number }>(page, 'GetPet')).exp).toBe(10)
 
-    // 逾期：担心（眼镜滑到鼻尖）
     await rpc(page, 'CreateItem', { title: '早就该交的报告', groupId: g.id, dueAt: Date.now() - 3_600_000 })
-    await expect(page.locator('.dog')).toHaveAttribute('data-mood', 'worried', { timeout: 8000 })
+    await expect(dogEl(page)).toHaveAttribute('data-mood', 'worried', { timeout: 8000 })
     await patchSettings(page, { petWorry: false })
-    await expect(page.locator('.dog')).not.toHaveAttribute('data-mood', 'worried')
+    await expect(dogEl(page)).not.toHaveAttribute('data-mood', 'worried')
 
-    // 右键菜单：统计、改名、换到左下角
+    const dog = page.getByTestId('pet-dog')
     await dog.click({ button: 'right' })
     await expect(page.getByTestId('pet-stats')).toContainText('经验 10 / 50')
-    await expect(page.getByTestId('pet-stats')).toContainText('帮你完成 1 件事')
+    await expect(page.getByTestId('pet-stats')).toContainText('一起玩了 0 次球')
     await page.getByRole('menuitem', { name: '改名…' }).click()
-    await page.getByRole('dialog').getByRole('textbox').fill('旺财')
-    await page.getByRole('dialog').getByRole('button', { name: '确定' }).click()
+    await page.getByTestId('name-input').fill('旺财')
+    await page.getByTestId('name-ok').click()
     await expect.poll(async () => (await rpc<{ name: string }>(page, 'GetPet')).name).toBe('旺财')
     await dog.click({ button: 'right' })
     await page.getByRole('menuitem', { name: '换到左下角' }).click()
     await expect(page.getByTestId('pet')).toHaveClass(/left/)
 
-    // 暂时收起：直到下次启动（刷新页面模拟重启）
     await dog.click({ button: 'right' })
     await page.getByRole('menuitem', { name: '暂时收起' }).click()
     await page.getByRole('dialog').getByRole('button', { name: '收起' }).click()
@@ -129,12 +168,65 @@ test.describe('摸鱼：戴眼镜的狗狗', () => {
     await expect(page.getByTestId('pet-dog')).toBeVisible()
   })
 
-  test('设置页：开关、统计、重置；没解锁的装扮不能换', async ({ page }) => {
+  test('按住拖到另一边；扔个球', async ({ page }) => {
     await freshGroup(page)
+    await enablePet(page)
+    const dog = page.getByTestId('pet-dog')
+    const box = (await dog.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x - 60, box.y + box.height / 2, { steps: 5 })
+    await page.mouse.move(40, box.y + box.height / 2, { steps: 5 })
+    await page.mouse.up()
+    await expect.poll(async () => (await rpc<{ petCorner: string }>(page, 'GetSettings')).petCorner).toBe('left')
+    await expect(page.getByTestId('pet')).toHaveClass(/left/)
+    await page.waitForTimeout(400)
+    expect((await rpc<{ pats: number }>(page, 'GetPet')).pats).toBe(0) // 拖动不算摸头
+
+    await dog.click({ button: 'right' })
+    await page.getByRole('menuitem', { name: '扔个球' }).click()
+    await expect(page.getByTestId('pet-ball')).toBeVisible()
+    await expect(page.getByTestId('pet')).toHaveAttribute('data-play', 'run')
+    await expect(dogEl(page)).toHaveAttribute('data-action', 'carry', { timeout: 3000 })
+    await expect(page.getByTestId('pet-bubble')).toContainText('再来一次', { timeout: 4000 })
+    await expect.poll(async () => (await rpc<{ plays: number }>(page, 'GetPet')).plays).toBe(1)
+  })
+
+  test('喝水提醒（含系统通知）、上班问候、节日装扮', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(2026, 11, 21, 10, 0)) // 星期一 10:00，离圣诞还有几天
+    await freshGroup(page)
+    await enablePet(page, true, { petWater: true, petWaterInterval: 45, petWaterNotify: true, workStart: '09:00', workEnd: '18:00' })
+    const rem = page.getByTestId('pet-reminder')
+    await expect(rem).toContainText('博士提醒你：喝口水吧')
+    await expect.poll(async () => ((await page.request.get('/__dev/shell')).json() as Promise<{ notified: string }>).then((x) => x.notified)).toContain('喝口水吧')
+    await expect(page.locator('[data-prop=bowl]')).toHaveCount(1)
+    await page.getByTestId('reminder-done').click()
+    await expect(rem).toHaveCount(0)
+    await expect.poll(async () => (await rpc<{ waterToday: number }>(page, 'GetPet')).waterToday).toBe(1)
+
+    // 节日：圣诞期间戴圣诞帽；关闭后恢复
+    await page.clock.setFixedTime(new Date(2026, 11, 24, 9, 10))
+    await page.reload()
+    await expect(page.locator('[data-acc=santa]')).toHaveCount(1)
+    await expect(page.getByTestId('pet-bubble')).toContainText('早！') // 平安夜是星期四：上班问候
+    await patchSettings(page, { petHoliday: false })
+    await expect(page.locator('[data-acc=santa]')).toHaveCount(0)
+  })
+
+  test('设置页：开启时起名（可用默认名）；提醒与节日选项；没解锁的装扮不能换', async ({ page }) => {
+    await freshGroup(page)
+    await rpc(page, 'ResetPet')
     await rpc(page, 'OpenSettings')
     await page.getByRole('tab', { name: '摸鱼' }).click()
     await page.getByLabel('养一只戴眼镜的狗狗').check()
+    await expect(page.getByTestId('name-input')).toHaveValue('博士')
+    await page.getByRole('button', { name: '就用默认的' }).click()
+    await expect.poll(async () => rpc<{ name: string; named: boolean }>(page, 'GetPet')).toMatchObject({ name: '博士', named: true })
     await expect(page.getByTestId('pet-summary')).toContainText('Lv.1')
+    await expect(page.getByLabel('节日自动装扮（春节、端午、中秋等）')).toBeChecked()
+    await page.getByLabel('喝水 / 起身提醒').check()
+    await expect(page.getByLabel('提醒间隔')).toHaveValue('45')
+    await expect(page.getByLabel('同时弹系统通知（便签被挡住时也能看到）')).not.toBeChecked()
     await expect(rpc(page, 'SetPetLook', 'crown', 'round')).rejects.toThrow(/解锁/)
     await page.getByTestId('settings-close').click()
     await expect(page.getByTestId('pet-dog')).toBeVisible()

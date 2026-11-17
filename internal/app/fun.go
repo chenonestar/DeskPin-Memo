@@ -40,6 +40,22 @@ func (a *App) RenamePet(name string) (service.PetView, error) { return a.svc.Ren
 func (a *App) PatPet() (service.PetView, error)               { return a.svc.PatPet() }
 func (a *App) GivePetSnack() (service.PetView, error)         { return a.svc.GivePetSnack() }
 func (a *App) ResetPet() (service.PetView, error)             { return a.svc.ResetPet() }
+func (a *App) PlayBall() (service.PetView, error)             { return a.svc.PlayBall() }
+func (a *App) DrinkWater() (service.PetView, error)           { return a.svc.DrinkWater() }
+
+// PetNotify 喝水 / 起身提醒同时弹一条系统通知（设置里开启了「同时弹系统通知」才发）。
+func (a *App) PetNotify(text string) error {
+	st := a.svc.GetSettings()
+	if !st.PetEnabled || !st.PetWater || !st.PetWaterNotify || a.Notify == nil {
+		return nil
+	}
+	name := service.PetDefaultName
+	if p, err := a.svc.GetPet(); err == nil {
+		name = p.Name
+	}
+	a.Notify(name+"提醒你", text)
+	return nil
+}
 func (a *App) SetPetLook(acc, glasses string) (service.PetView, error) {
 	return a.svc.SetPetLook(acc, glasses)
 }

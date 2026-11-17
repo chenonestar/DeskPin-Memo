@@ -1,8 +1,10 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"testing"
 )
 
@@ -134,5 +136,50 @@ func TestPetAndExportRoundTrip(t *testing.T) {
 	_, _ = t2.Import(mustParse(t, mustJSON(t, d)), ImportOverwrite)
 	if pp, _, _ := t2.GetPet(); pp.Name != "眼镜" {
 		t.Fatal("覆盖导入替换宠物", pp.Name)
+	}
+}
+
+// 从 v5 升级：还叫旧默认名「眼镜」的狗狗自动改名为「博士」，已有的狗狗视为已起名；改过名的保持不变。
+func TestMigrateV6RenamesDefaultPet(t *testing.T) {
+	for _, tc := range []struct{ before, after string }{{"眼镜", "博士"}, {"旺财", "旺财"}} {
+		db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(filepath.Join(t.TempDir(), "old.db")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 5; i++ {
+			if _, err := db.Exec(migrations[i]); err != nil {
+				t.Fatal(i, err)
+			}
+		}
+		_, _ = db.Exec(`PRAGMA user_version = 5`)
+		if _, err := db.Exec(`INSERT INTO pet(id,name,exp,created_at) VALUES(1,?,120,1)`, tc.before); err != nil {
+			t.Fatal(err)
+		}
+		if err := migrate(db, nil); err != nil {
+			t.Fatal(err)
+		}
+		s := &Store{db: db}
+		p, ok, err := s.GetPet()
+		if err != nil || !ok || p.Name != tc.after || !p.Named || p.Exp != 120 || p.Plays != 0 {
+			t.Fatalf("%+v %v", p, err)
+		}
+		db.Close()
+	}
+}
+
+func TestPetPlaysAndWater(t *testing.T) {
+	s := open(t)
+	_, _ = s.SavePet(Pet{Name: "博士"})
+	p, _, _ := s.AddPetPlay()
+	if p.Plays != 1 || p.Named {
+		t.Fatalf("新建的狗狗默认未起名: %+v", p)
+	}
+	p, _, _ = s.AddPetWater("2026-11-16")
+	p, _, _ = s.AddPetWater("2026-11-16")
+	if p.WaterCount != 2 || p.WaterDate != "2026-11-16" {
+		t.Fatal(p)
+	}
+	if p, _, _ = s.AddPetWater("2026-11-17"); p.WaterCount != 1 {
+		t.Fatal("换了一天从 1 开始", p)
 	}
 }

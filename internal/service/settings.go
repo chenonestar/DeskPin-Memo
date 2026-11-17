@@ -41,6 +41,11 @@ type Settings struct {
 	PetCorner  string `json:"petCorner"`  // right | left
 	PetBubbles bool   `json:"petBubbles"` // 偶尔说话
 	PetWorry   bool   `json:"petWorry"`   // 有逾期事项时露出担心的表情
+	PetHoliday bool   `json:"petHoliday"` // 节日自动装扮
+	// 喝水 / 起身提醒（默认关闭）：只在工作日上班时间提醒；PetWaterNotify 同时弹系统通知
+	PetWater         bool `json:"petWater"`
+	PetWaterInterval int  `json:"petWaterInterval"` // 分钟：30 | 45 | 60 | 90
+	PetWaterNotify   bool `json:"petWaterNotify"`
 	// 摸鱼：下班倒计时 / 今天已赚
 	ShowCountdown  bool    `json:"showCountdown"`
 	WorkStart      string  `json:"workStart"` // HH:MM
@@ -68,6 +73,8 @@ func DefaultSettings() Settings {
 		PetCorner:          "right",
 		PetBubbles:         true,
 		PetWorry:           true,
+		PetHoliday:         true,
+		PetWaterInterval:   45,
 		WorkStart:          "09:00",
 		WorkEnd:            "18:00",
 		CountdownMoney:     "hover",
@@ -124,6 +131,9 @@ func (s Settings) normalized() Settings {
 	}
 	if s.NewsProxy != "none" && s.NewsProxy != "manual" {
 		s.NewsProxy = "system"
+	}
+	if s.PetWaterInterval != 30 && s.PetWaterInterval != 45 && s.PetWaterInterval != 60 && s.PetWaterInterval != 90 {
+		s.PetWaterInterval = d.PetWaterInterval
 	}
 	if s.PetCorner != "left" {
 		s.PetCorner = "right"
