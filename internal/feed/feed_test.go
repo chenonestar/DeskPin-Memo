@@ -215,7 +215,8 @@ func TestPresetsAreValid(t *testing.T) {
 	seen := map[string]bool{}
 	defaults := 0
 	for _, p := range Presets {
-		if _, err := NormalizeURL(p.URL); err != nil || !strings.HasPrefix(p.URL, "https://") || p.Name == "" || seen[p.URL] {
+		// 只有标为待验证的老接口允许 http
+		if _, err := NormalizeURL(p.URL); err != nil || (!strings.HasPrefix(p.URL, "https://") && !p.Unverified) || p.Name == "" || seen[p.URL] {
 			t.Errorf("%+v", p)
 		}
 		seen[p.URL] = true
@@ -225,5 +226,17 @@ func TestPresetsAreValid(t *testing.T) {
 	}
 	if defaults != 3 {
 		t.Fatalf("默认勾选 3 个: %d", defaults)
+	}
+	fin := 0
+	for _, p := range Presets {
+		if p.Category == "财经" {
+			fin++
+			if p.Default {
+				t.Errorf("财经源默认不勾选: %s", p.Name)
+			}
+		}
+	}
+	if fin != 4 {
+		t.Fatalf("财经源 4 个: %d", fin)
 	}
 }

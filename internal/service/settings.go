@@ -42,10 +42,11 @@ type Settings struct {
 	PetBubbles bool   `json:"petBubbles"` // 偶尔说话
 	PetWorry   bool   `json:"petWorry"`   // 有逾期事项时露出担心的表情
 	// 摸鱼：下班倒计时 / 今天已赚
-	ShowCountdown bool    `json:"showCountdown"`
-	WorkStart     string  `json:"workStart"` // HH:MM
-	WorkEnd       string  `json:"workEnd"`   // HH:MM（狗狗到点伸懒腰也用它）
-	MonthlySalary float64 `json:"monthlySalary"`
+	ShowCountdown  bool    `json:"showCountdown"`
+	WorkStart      string  `json:"workStart"` // HH:MM
+	WorkEnd        string  `json:"workEnd"`   // HH:MM（狗狗到点伸懒腰也用它）
+	MonthlySalary  float64 `json:"monthlySalary"`
+	CountdownMoney string  `json:"countdownMoney"` // 「今天已赚」的显示方式：hover（悬停才显示，默认）| always | never
 	// 摸鱼：正经模式（老板键）——一键收起新闻条、宠物、倒计时，可同时切到指定分组
 	HotkeyBoss  string `json:"hotkeyBoss"`
 	BossGroupID string `json:"bossGroupId"`
@@ -69,6 +70,7 @@ func DefaultSettings() Settings {
 		PetWorry:           true,
 		WorkStart:          "09:00",
 		WorkEnd:            "18:00",
+		CountdownMoney:     "hover",
 		HotkeyBoss:         "Ctrl+Alt+H",
 	}
 }
@@ -131,6 +133,9 @@ func (s Settings) normalized() Settings {
 	}
 	if !validHHMM(s.WorkEnd) {
 		s.WorkEnd = d.WorkEnd
+	}
+	if s.CountdownMoney != "always" && s.CountdownMoney != "never" {
+		s.CountdownMoney = "hover"
 	}
 	if s.MonthlySalary < 0 || s.MonthlySalary > 1e8 {
 		s.MonthlySalary = 0

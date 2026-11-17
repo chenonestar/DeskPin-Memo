@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ago, countdown, earnedToday, formatDuration, inDailyRange, petLine, petMood, type MoodInput } from './fun'
+import { ago, countdown, countdownText, earnedToday, formatDuration, formatHM, inDailyRange, petLine, petMood, type MoodInput } from './fun'
 
 // 2026-11-16 是星期一
 const at = (d: number, h: number, m = 0) => new Date(2026, 10, d, h, m)
@@ -58,6 +58,26 @@ describe('下班倒计时', () => {
     expect(ago(now - 12 * 60_000, now)).toBe('12 分钟前')
     expect(ago(now - 3 * 3_600_000, now)).toBe('3 小时前')
     expect(ago(now - 50 * 3_600_000, now)).toBe('2 天前')
+  })
+})
+
+describe('紧凑倒计时与金额显示', () => {
+  const working = countdown(at(16, 15, 46, ), '09:00', '18:00') // 距下班 2:14:00
+  it('紧凑只显示时分，悬停展开到秒', () => {
+    expect(formatHM(2 * 3_600_000 + 13 * 60_000 + 59_000)).toBe('2:13')
+    expect(countdownText(working, false, 0, 'hover')).toBe('下班 2:14')
+    expect(countdownText(working, true, 0, 'hover')).toBe('距下班 2:14:00')
+    expect(countdownText(countdown(at(16, 8, 15), '09:00', '18:00'), false, 0, 'hover')).toBe('上班 0:45')
+    expect(countdownText(countdown(at(16, 19), '09:00', '18:00'), false, 0, 'hover')).toBe('已下班')
+    expect(countdownText(countdown(at(22, 12), '09:00', '18:00'), false, 21750, 'always')).toBe('周末')
+  })
+  it('金额：悬停才显示 / 一直显示 / 不显示；没填月薪不显示', () => {
+    const c = countdown(at(16, 13, 30), '09:00', '18:00') // 已过一半
+    expect(countdownText(c, false, 21750, 'hover')).toBe('下班 4:30 · ¥ ••')
+    expect(countdownText(c, true, 21750, 'hover')).toBe('距下班 4:30:00 · 今天已赚 ¥500.00')
+    expect(countdownText(c, false, 21750, 'always')).toBe('下班 4:30 · ¥500.00')
+    expect(countdownText(c, true, 21750, 'never')).toBe('距下班 4:30:00')
+    expect(countdownText(c, false, 0, 'always')).toBe('下班 4:30')
   })
 })
 

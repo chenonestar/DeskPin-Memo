@@ -20,7 +20,11 @@ export function FunPane({ s, patch, groups, onSettings }: P & { groups: Group[];
       <div className="rowline"><label htmlFor="sal">月薪（可不填）</label>
         <input id="sal" type="number" min={0} step={100} style={{ width: 110 }} value={s.monthlySalary || ''} placeholder="不显示已赚"
           onChange={(e) => void patch({ monthlySalary: Math.max(0, Number(e.target.value) || 0) })} /></div>
-      <div className="hint">填了月薪会显示「今天已赚 ¥…」（按每月 21.75 个计薪日折算），只保存在本机。狗狗到下班时间会伸懒腰。周末不倒计时。</div>
+      <div className="rowline"><label htmlFor="cm">金额显示</label>
+        <select id="cm" value={s.countdownMoney} onChange={(e) => void patch({ countdownMoney: e.target.value as S['countdownMoney'] })}>
+          <option value="hover">鼠标悬停时显示</option><option value="always">一直显示</option><option value="never">不显示</option>
+        </select></div>
+      <div className="hint">平时只显示到分钟（如「下班 2:13 · ¥ ••」），鼠标放上去展开秒数和金额。填了月薪才有「今天已赚」（按每月 21.75 个计薪日折算），只保存在本机。狗狗到下班时间会伸懒腰。周末不倒计时。便签较窄时，倒计时和新闻自动分成两行。</div>
       <h4>正经模式（老板键）</h4>
       <div className="rowline"><label htmlFor="bossg">同时切换到分组</label>
         <select id="bossg" value={s.bossGroupId} onChange={(e) => void patch({ bossGroupId: e.target.value })}>
@@ -152,7 +156,7 @@ function PresetPicker({ presets, first, onOk, onCancel }: { presets: FeedPreset[
         {presets.map((p) => (
           <label key={p.url}>
             <input type="checkbox" disabled={p.added} checked={p.added || sel.has(p.url)} onChange={() => toggle(p.url)} aria-label={p.name} />
-            <span className="cat">{p.category}</span><span>{p.name}{p.added ? '（已订阅）' : ''}</span>
+            <span className="cat">{p.category}</span><span>{p.name}{p.unverified ? '（待验证）' : ''}{p.added ? '（已订阅）' : ''}</span>
           </label>
         ))}
       </div>

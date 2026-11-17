@@ -76,6 +76,36 @@ export function countdown(now: Date, workStart: string, workEnd: string): Countd
 export const earnedToday = (monthlySalary: number, fraction: number) =>
   monthlySalary > 0 ? (monthlySalary / PAY_DAYS_PER_MONTH) * Math.min(1, Math.max(0, fraction)) : 0
 
+/** 毫秒 → H:MM（紧凑显示用，向下取整到分钟） */
+export function formatHM(ms: number): string {
+  const m = Math.max(0, Math.floor(ms / 60_000))
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`
+}
+
+export type MoneyMode = 'hover' | 'always' | 'never'
+
+/**
+ * 倒计时文字。紧凑：「下班 2:13 · ¥ ••」；展开（鼠标悬停）：「距下班 2:13:05 · 今天已赚 ¥386.20」。
+ * 金额：没填月薪或周末不显示；never 不显示；hover 只在展开时显示数字；always 一直显示数字。
+ */
+export function countdownText(c: Countdown, expanded: boolean, salary: number, money: MoneyMode): string {
+  let t: string
+  switch (c.state) {
+    case 'weekend': t = expanded ? '周末愉快' : '周末'; break
+    case 'before': t = expanded ? `距上班 ${formatDuration(c.remainingMs)}` : `上班 ${formatHM(c.remainingMs)}`; break
+    case 'after': t = expanded ? '已下班 🎉' : '已下班'; break
+    default: t = expanded ? `距下班 ${formatDuration(c.remainingMs)}` : `下班 ${formatHM(c.remainingMs)}`
+  }
+  if (salary > 0 && c.state !== 'weekend' && money !== 'never') {
+    const v = earnedToday(salary, c.fraction).toFixed(2)
+    t += expanded ? ` · 今天已赚 ¥${v}` : money === 'always' ? ` · ¥${v}` : ' · ¥ ••'
+  }
+  return t
+}
+
+/** 倒计时和新闻都开启、且宽度小于这个值时分成两行。 */
+export const TWO_ROW_WIDTH = 380
+
 /** 毫秒 → H:MM:SS */
 export function formatDuration(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000))

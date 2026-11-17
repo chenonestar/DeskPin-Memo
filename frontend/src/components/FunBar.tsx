@@ -1,15 +1,26 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, on } from '../api'
 import type { NewsItem, Settings } from '../types'
-import { ago, countdown, earnedToday, formatDuration } from '../fun'
+import { ago, countdown, countdownText, TWO_ROW_WIDTH } from '../fun'
 
 /** 便签底部的一行：下班倒计时 + 新闻轮播。 */
 export function FunBar({ settings, onOpenNews }: { settings: Settings; onOpenNews: () => void }) {
   const showNews = settings.newsEnabled
   const showCd = settings.showCountdown
+  const ref = useRef<HTMLDivElement>(null)
+  const [narrow, setNarrow] = useState(false)
+  // 两者都开、宽度不够时分两行：上一行倒计时，下一行新闻
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setNarrow(el.clientWidth < TWO_ROW_WIDTH))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [showNews, showCd])
   if (!showNews && !showCd) return null
+  const two = showNews && showCd && narrow
   return (
-    <div className="funbar" data-testid="funbar">
+    <div ref={ref} className={`funbar ${two ? 'tworow' : ''}`} data-testid="funbar" data-rows={two ? 2 : 1}>
       {showCd && <CountdownChip settings={settings} />}
       {showNews && <NewsTicker settings={settings} onOpenNews={onOpenNews} />}
     </div>
@@ -18,21 +29,20 @@ export function FunBar({ settings, onOpenNews }: { settings: Settings; onOpenNew
 
 function CountdownChip({ settings }: { settings: Settings }) {
   const [now, setNow] = useState(() => new Date())
+  const [expanded, setExpanded] = useState(false)
+  // 紧凑显示只到分钟：每 15 秒刷新一次就够，不会每秒跳动；悬停展开后每秒刷新
   useEffect(() => {
-    const id = window.setInterval(() => { if (!document.hidden) setNow(new Date()) }, 1000)
+    setNow(new Date())
+    const id = window.setInterval(() => { if (!document.hidden) setNow(new Date()) }, expanded ? 1000 : 15_000)
     return () => clearInterval(id)
-  }, [])
+  }, [expanded])
   const c = countdown(now, settings.workStart, settings.workEnd)
-  const earned = earnedToday(settings.monthlySalary, c.fraction)
-  let text: string
-  switch (c.state) {
-    case 'weekend': text = '周末愉快'; break
-    case 'before': text = `距上班 ${formatDuration(c.remainingMs)}`; break
-    case 'after': text = '已下班 🎉'; break
-    default: text = `距下班 ${formatDuration(c.remainingMs)}`
-  }
-  const money = settings.monthlySalary > 0 && c.state !== 'weekend' ? ` · 已赚 ¥${earned.toFixed(2)}` : ''
-  return <span className="cdchip" data-testid="countdown" title={`上班 ${settings.workStart} · 下班 ${settings.workEnd}`}>{text}{money}</span>
+  return (
+    <span className={`cdchip ${expanded ? 'open' : ''}`} data-testid="countdown" title={`上班 ${settings.workStart} · 下班 ${settings.workEnd}`}
+      onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}>
+      {countdownText(c, expanded, settings.monthlySalary, settings.countdownMoney)}
+    </span>
+  )
 }
 
 const ROTATE_MS = 8000

@@ -131,6 +131,7 @@ export interface Settings {
   workStart: string
   workEnd: string
   monthlySalary: number
+  countdownMoney: 'hover' | 'always' | 'never'
   hotkeyBoss: string
   bossGroupId: string
 }
@@ -169,6 +170,7 @@ export interface FeedPreset {
   name: string
   url: string
   default: boolean
+  unverified: boolean
   added: boolean
 }
 

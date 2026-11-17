@@ -33,7 +33,8 @@ test.describe('摸鱼：RSS 新闻', () => {
     await page.getByLabel('启用新闻订阅（会联网）').click() // 先弹出选择框，确认后才真正开启
     // 首次开启：弹出预置源，默认勾选 3 个；这里全部取消，避免测试访问外网
     const list = page.getByTestId('preset-list')
-    await expect(list.getByRole('checkbox')).toHaveCount(12)
+    await expect(list.getByRole('checkbox')).toHaveCount(16)
+    await expect(list).toContainText('长桥·金融快讯（待验证）') // 财经源默认不勾选
     await expect(list.getByRole('checkbox', { checked: true })).toHaveCount(3)
     for (const n of ['少数派', 'IT之家', '中国新闻网·滚动']) await list.getByLabel(n).uncheck()
     await page.getByTestId('preset-ok').click()
@@ -147,7 +148,7 @@ test.describe('摸鱼：下班倒计时与正经模式', () => {
     const g = await freshGroup(page)
     const work = await rpc<{ id: string; name: string }>(page, 'CreateGroup', `工作${Date.now()}`, '')
     await patchSettings(page, { showCountdown: true, monthlySalary: 21750, petEnabled: true, bossGroupId: work.id })
-    await expect(page.getByTestId('countdown')).toHaveText(/距下班|距上班|已下班|周末愉快/)
+    await expect(page.getByTestId('countdown')).toHaveText(/下班|上班|已下班|周末/)
     await expect(page.getByTestId('pet-dog')).toBeVisible()
 
     expect(await rpc<boolean>(page, 'ToggleBossMode')).toBe(true)
@@ -168,5 +169,28 @@ test.describe('摸鱼：下班倒计时与正经模式', () => {
     await expect(page.getByRole('button', { name: '正经模式（老板键）' })).toHaveText('Ctrl+Alt+H')
     await page.getByRole('tab', { name: '摸鱼' }).click()
     await expect(page.getByText('新闻条、狗狗、倒计时一键收起')).toBeVisible()
+  })
+
+  test('倒计时紧凑显示、金额悬停才显示、窄时自动分两行', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(2026, 10, 16, 13, 30)) // 星期一 13:30，已过一半
+    await freshGroup(page)
+    await patchSettings(page, { showCountdown: true, monthlySalary: 21750, workStart: '09:00', workEnd: '18:00', countdownMoney: 'hover', newsEnabled: true, newsSetupDone: true })
+    const cd = page.getByTestId('countdown')
+    await expect(cd).toHaveText('下班 4:30 · ¥ ••')
+    await cd.hover()
+    await expect(cd).toHaveText('距下班 4:30:00 · 今天已赚 ¥500.00')
+    await page.getByTestId('titlebar').hover()
+    await expect(cd).toHaveText('下班 4:30 · ¥ ••')
+    // 默认宽度 300：倒计时与新闻分两行；拉宽后合回一行
+    await expect(page.getByTestId('funbar')).toHaveAttribute('data-rows', '2')
+    await page.setViewportSize({ width: 460, height: 420 })
+    await expect(page.getByTestId('funbar')).toHaveAttribute('data-rows', '1')
+    await page.setViewportSize({ width: 300, height: 420 })
+    // 一直显示 / 不显示
+    await patchSettings(page, { countdownMoney: 'always' })
+    await expect(cd).toHaveText('下班 4:30 · ¥500.00')
+    await patchSettings(page, { countdownMoney: 'never' })
+    await expect(cd).toHaveText('下班 4:30')
+    await patchSettings(page, { countdownMoney: 'hover', monthlySalary: 0, newsSetupDone: false })
   })
 })
