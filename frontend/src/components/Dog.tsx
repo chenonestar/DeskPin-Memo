@@ -1,11 +1,14 @@
 import type { PetAccessory, PetGlasses } from '../types'
-import type { HolidayAccessory, PetMood } from '../fun'
+import type { HolidayAccessory, IdleAct, PetMood } from '../fun'
 
 /** 一次性的小特效：摸头冒爱心、完成事项叼骨头、升级撒花。 */
 export type PetEffect = 'hearts' | 'bone' | 'confetti' | null
 
-/** 正在做的动作（二期互动）：握手、打喷嚏、揉眼睛、推眼镜、叼着球、守着水碗。 */
-export type PetAction = 'shake' | 'sneeze' | 'rub' | 'push' | 'carry' | 'water' | null
+/**
+ * 正在做的动作：二期互动（握手、打喷嚏、揉眼睛、推眼镜、叼着球、守着水碗），
+ * 三期自主动作（巡逻由外层平移实现，这里不画）与翻肚皮。
+ */
+export type PetAction = 'shake' | 'sneeze' | 'rub' | 'push' | 'carry' | 'water' | 'belly' | Exclude<IdleAct, 'patrol'> | null
 
 interface Props {
   mood: PetMood
@@ -27,11 +30,15 @@ const EAR = '#9A5B2E'
 export function Dog({ mood, accessory, glasses, effect, action = null, look, size = 64 }: Props) {
   const sneeze = action === 'sneeze'
   const rub = action === 'rub'
-  const asleep = (mood === 'sleeping' || mood === 'dozing') && !rub
-  const joyful = mood === 'happy' || mood === 'celebrate'
+  const yawn = action === 'yawn'
+  const clean = action === 'clean' // 擦眼镜：眼镜拿在爪子里
+  const read = action === 'read'
+  const lie = action === 'liedown'
+  const asleep = ((mood === 'sleeping' || mood === 'dozing') && !rub) || yawn
+  const joyful = mood === 'happy' || mood === 'celebrate' || action === 'belly'
   const worried = mood === 'worried'
   const lx = look ? Math.max(-1, Math.min(1, look.x)) * 3 : 0
-  const ly = look ? Math.max(-1, Math.min(1, look.y)) * 2.5 : 0
+  const ly = read ? 3 : look ? Math.max(-1, Math.min(1, look.y)) * 2.5 : 0
   const scarfColor = accessory === 'redscarf' ? '#D93025' : '#4A7BD0'
   const scarfTail = accessory === 'redscarf' ? '#B3261E' : '#3D68B4'
   return (
@@ -46,6 +53,12 @@ export function Dog({ mood, accessory, glasses, effect, action = null, look, siz
         {action === 'shake'
           ? <ellipse cx="146" cy="138" rx="13" ry="8" fill={CREAM} stroke="#C97C35" strokeWidth="2" transform="rotate(-35 146 138)" data-paw="raised" />
           : <ellipse cx="119" cy="188" rx="13" ry="8" fill={CREAM} stroke="#C97C35" strokeWidth="2" />}
+        {action === 'scratch' && (
+          <g className="dog-scratchleg" data-pose="scratch">
+            <ellipse cx="60" cy="140" rx="10" ry="26" fill={FUR} transform="rotate(32 60 140)" />
+            <ellipse cx="44" cy="112" rx="11" ry="7" fill={CREAM} stroke="#C97C35" strokeWidth="2" />
+          </g>
+        )}
         {(accessory === 'scarf' || accessory === 'redscarf') && (
           <g data-acc={accessory}>
             <path d="M62 120 Q100 138 138 120 L136 132 Q100 150 64 132 Z" fill={scarfColor} />
@@ -82,6 +95,12 @@ export function Dog({ mood, accessory, glasses, effect, action = null, look, siz
             <g fill="none" stroke={INK} strokeWidth="3.5" strokeLinecap="round" data-eyes="rub">
               <path d="M73 80 Q80 85 87 80" /><circle cx="120" cy="79" r="5" fill={INK} stroke="none" />
             </g>
+          ) : lie ? (
+            <g fill="none" stroke={INK} strokeWidth="3.5" strokeLinecap="round" data-eyes="half">
+              <path d="M73 79 L87 79" /><path d="M113 79 L127 79" />
+            </g>
+          ) : clean ? (
+            <g fill={INK} data-eyes="bare"><circle cx="80" cy="79" r="3.5" /><circle cx="120" cy="79" r="3.5" /></g>
           ) : asleep ? (
             <g fill="none" stroke={INK} strokeWidth="3.5" strokeLinecap="round" data-eyes="closed">
               <path d="M73 80 Q80 85 87 80" /><path d="M113 80 Q120 85 127 80" />
@@ -92,7 +111,7 @@ export function Dog({ mood, accessory, glasses, effect, action = null, look, siz
             </g>
           ) : (
             <g className="dog-eyes" data-eyes="open">
-              <g transform={`translate(${lx} ${ly})`} data-look={`${lx.toFixed(1)},${ly.toFixed(1)}`}>
+              <g className="dog-pupils" transform={`translate(${lx} ${ly})`} data-look={`${lx.toFixed(1)},${ly.toFixed(1)}`}>
                 <circle cx="80" cy="78" r={worried ? 5 : 6} fill={INK} />
                 <circle cx="120" cy="78" r={worried ? 5 : 6} fill={INK} />
                 <circle cx="82" cy="76" r="2" fill="#fff" />
@@ -104,12 +123,16 @@ export function Dog({ mood, accessory, glasses, effect, action = null, look, siz
           <ellipse cx="66" cy="100" rx={sneeze ? 10 : 7} ry={sneeze ? 6 : 4.5} fill={sneeze ? '#F27F86' : '#F7A9A0'} opacity={joyful || sneeze ? 0.95 : 0.7} />
           <ellipse cx="134" cy="100" rx={sneeze ? 10 : 7} ry={sneeze ? 6 : 4.5} fill={sneeze ? '#F27F86' : '#F7A9A0'} opacity={joyful || sneeze ? 0.95 : 0.7} />
           {/* 眼镜：担心时滑到鼻尖；打喷嚏时被震歪 */}
-          <g className="dog-glasses" transform={sneeze ? 'rotate(-14 100 78) translate(0 4)' : worried ? 'translate(0 6)' : undefined} data-glasses={glasses}>
-            <Glasses kind={glasses} />
-          </g>
+          {!clean && (
+            <g className="dog-glasses" transform={sneeze ? 'rotate(-14 100 78) translate(0 4)' : worried ? 'translate(0 6)' : undefined} data-glasses={glasses}>
+              <Glasses kind={glasses} />
+            </g>
+          )}
           <ellipse cx="100" cy="96" rx="9" ry="6.5" fill={INK} />
           <ellipse cx="97" cy="94" rx="3" ry="1.6" fill="#fff" opacity="0.6" />
-          {worried ? (
+          {yawn ? (
+            <ellipse cx="100" cy="114" rx="9" ry="10" fill="#7A2E2E" stroke={INK} strokeWidth="2.5" data-mouth="yawn" />
+          ) : worried ? (
             <path d="M88 113 Q94 108 100 113 Q106 118 112 113" fill="none" stroke={INK} strokeWidth="2.5" strokeLinecap="round" />
           ) : (
             <path d="M100 102 L100 108 M100 108 Q92 115 86 109 M100 108 Q108 115 114 109" fill="none" stroke={INK} strokeWidth="2.5" strokeLinecap="round" />
@@ -123,7 +146,8 @@ export function Dog({ mood, accessory, glasses, effect, action = null, look, siz
           {action === 'carry' && (
             <g data-carry="ball"><circle cx="100" cy="118" r="11" fill="#F5C542" stroke={INK} strokeWidth="2" /><path d="M90 114 Q100 122 110 114" fill="none" stroke="#E5484D" strokeWidth="2.5" /></g>
           )}
-          {!asleep && !worried && !sneeze && action !== 'carry' && (
+          {clean && <circle className="dog-puff" cx="122" cy="118" r="9" fill="#DCEBF7" opacity="0.8" data-fx="puff" />}
+          {!asleep && !worried && !sneeze && !lie && action !== 'carry' && (
             <g className="dog-tongue">
               <path d="M94 111 Q94 124 100 124 Q106 124 106 111 Z" fill="#F07C7C" stroke={INK} strokeWidth="2" />
               <path d="M100 113 L100 120" stroke="#C85A5A" strokeWidth="1.5" strokeLinecap="round" />
@@ -167,13 +191,40 @@ export function Dog({ mood, accessory, glasses, effect, action = null, look, siz
           </g>
         )}
       </g>
+      {read && (
+        <g data-prop="book">
+          <path d="M66 150 L100 158 L100 186 L66 178 Z" fill="#fff" stroke={INK} strokeWidth="2" />
+          <path d="M134 150 L100 158 L100 186 L134 178 Z" fill="#F4F1E8" stroke={INK} strokeWidth="2" />
+          <path className="dog-page" d="M100 158 L130 152 L130 178 L100 184 Z" fill="#fff" stroke={INK} strokeWidth="1.5" />
+          <path d="M72 160 L94 165 M72 166 L94 171 M106 165 L126 160 M106 171 L126 166" stroke="#B9B4A6" strokeWidth="2" />
+        </g>
+      )}
+      {clean && (
+        <g className="dog-heldglasses" transform="translate(52 150) scale(0.6)" data-prop="glasses-in-paw"><Glasses kind={glasses} /></g>
+      )}
+      {action === 'shakeoff' && (
+        <g stroke="#B9946A" strokeWidth="3" strokeLinecap="round" data-fx="shakeoff">
+          <path d="M28 120 L16 116" /><path d="M26 136 L12 138" /><path d="M172 120 L184 116" /><path d="M174 136 L188 138" />
+        </g>
+      )}
+      {action === 'chase' && (
+        <g className="dog-stars" fill="#F5C542" data-fx="dizzy">
+          <path d="M70 18 l3 7 7 1 -5 5 1 7 -6 -3 -6 3 1 -7 -5 -5 7 -1z" /><path d="M120 10 l3 7 7 1 -5 5 1 7 -6 -3 -6 3 1 -7 -5 -5 7 -1z" />
+        </g>
+      )}
+      {action === 'butterfly' && (
+        <g className="dog-butterfly" data-prop="butterfly">
+          <ellipse cx="0" cy="0" rx="8" ry="5" fill="#F28CB8" transform="rotate(-30)" /><ellipse cx="0" cy="0" rx="8" ry="5" fill="#9B6CD8" transform="rotate(30)" />
+          <rect x="-1.5" y="-6" width="3" height="12" rx="1.5" fill={INK} />
+        </g>
+      )}
       {action === 'water' && (
         <g data-prop="bowl">
           <path d="M150 178 L196 178 L190 196 L156 196 Z" fill="#4A7BD0" stroke={INK} strokeWidth="2" />
           <ellipse cx="173" cy="178" rx="23" ry="5" fill="#9FD3F5" stroke={INK} strokeWidth="2" />
         </g>
       )}
-      {asleep && <text className="dog-zzz" x="150" y="36" fontSize="26" fontWeight="700" fill="#6C7A96">Z<tspan fontSize="18" dy="-10">z</tspan></text>}
+      {asleep && !yawn && <text className="dog-zzz" x="150" y="36" fontSize="26" fontWeight="700" fill="#6C7A96">Z<tspan fontSize="18" dy="-10">z</tspan></text>}
       {effect === 'hearts' && (
         <g className="dog-fx" data-fx="hearts" fill="#F05A7E">
           <path d="M160 40 c-6-10-20-4-14 6 l14 14 14-14 c6-10-8-16-14-6z" />

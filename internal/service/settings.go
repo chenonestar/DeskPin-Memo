@@ -42,6 +42,8 @@ type Settings struct {
 	PetBubbles bool   `json:"petBubbles"` // 偶尔说话
 	PetWorry   bool   `json:"petWorry"`   // 有逾期事项时露出担心的表情
 	PetHoliday bool   `json:"petHoliday"` // 节日自动装扮
+	// PetActivity 自主动作的活跃程度：quiet（不做随机动作）| normal（默认，1–3 分钟一次）| lively（30–90 秒一次）
+	PetActivity string `json:"petActivity"`
 	// 喝水 / 起身提醒（默认关闭）：只在工作日上班时间提醒；PetWaterNotify 同时弹系统通知
 	PetWater         bool `json:"petWater"`
 	PetWaterInterval int  `json:"petWaterInterval"` // 分钟：30 | 45 | 60 | 90
@@ -74,6 +76,7 @@ func DefaultSettings() Settings {
 		PetBubbles:         true,
 		PetWorry:           true,
 		PetHoliday:         true,
+		PetActivity:        "normal",
 		PetWaterInterval:   45,
 		WorkStart:          "09:00",
 		WorkEnd:            "18:00",
@@ -134,6 +137,9 @@ func (s Settings) normalized() Settings {
 	}
 	if s.PetWaterInterval != 30 && s.PetWaterInterval != 45 && s.PetWaterInterval != 60 && s.PetWaterInterval != 90 {
 		s.PetWaterInterval = d.PetWaterInterval
+	}
+	if s.PetActivity != "quiet" && s.PetActivity != "lively" {
+		s.PetActivity = "normal"
 	}
 	if s.PetCorner != "left" {
 		s.PetCorner = "right"

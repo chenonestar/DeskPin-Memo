@@ -117,11 +117,13 @@ test.describe('摸鱼：戴眼镜的狗狗', () => {
     await page.waitForTimeout(400)
     expect((await rpc<{ pats: number }>(page, 'GetPet')).pats).toBe(1)
 
+    await page.mouse.move(5, 5) // 移开：鼠标在它身上停 3 秒会翻肚皮
     await page.waitForTimeout(2100) // 等两秒窗口过去，再连点 5 次
     for (let i = 0; i < 5; i++) await dog.click({ delay: 10 })
     await expect(dogEl(page)).toHaveAttribute('data-action', 'sneeze')
     await expect(page.getByTestId('pet-bubble')).toContainText('阿嚏')
 
+    await page.mouse.move(5, 5)
     await expect(dogEl(page)).toHaveAttribute('data-action', '', { timeout: 5000 })
     await page.mouse.move(5, 200) // 鼠标在狗狗左边 → 眼珠往左
     await expect(page.locator('[data-testid=pet-dog] [data-look]')).toHaveAttribute('data-look', /^-/)
@@ -230,6 +232,77 @@ test.describe('摸鱼：戴眼镜的狗狗', () => {
     await expect(rpc(page, 'SetPetLook', 'crown', 'round')).rejects.toThrow(/解锁/)
     await page.getByTestId('settings-close').click()
     await expect(page.getByTestId('pet-dog')).toBeVisible()
+  })
+})
+
+const IDLE = ['yawn', 'scratch', 'shakeoff', 'lookaround', 'chase', 'clean', 'read', 'butterfly', 'liedown']
+/** 用可控时钟一秒一秒往前走，记录狗狗做过的自主动作（含巡逻）。 */
+async function watchIdle(page: Page, seconds: number) {
+  const seen = new Set<string>()
+  for (let i = 0; i < seconds; i++) {
+    await page.clock.runFor(1000)
+    const st = await page.evaluate(() => ({
+      act: document.querySelector('[data-testid=pet-dog] .dog')?.getAttribute('data-action') ?? '',
+      walk: document.querySelector('[data-testid=pet]')?.getAttribute('data-walk') ?? '',
+    }))
+    if (st.act) seen.add(st.act)
+    if (st.walk) seen.add('patrol')
+  }
+  return seen
+}
+
+test.describe('摸鱼：狗狗的自主动作', () => {
+  test.afterEach(async ({ page }) => {
+    await cleanupFun(page)
+    await patchSettings(page, { petActivity: 'normal', petWorry: true })
+    await rpc(page, 'ResetPet'); await rpc(page, 'RenamePet', '博士')
+  })
+  // 星期六下午：没有上班问候、没有下班伸懒腰；关掉「担心」，避免其他用例留下的逾期事项影响心情
+  const SAT = new Date(2026, 10, 21, 15, 0)
+
+  test('活泼：一分半内会做随机小动作；点它立即打断', async ({ page }) => {
+    await page.clock.install({ time: SAT })
+    await freshGroup(page)
+    await enablePet(page, true, { petActivity: 'lively', petWorry: false })
+    await expect(page.getByTestId('pet-dog')).toBeVisible()
+    let acted = ''
+    for (let i = 0; i < 100 && !acted; i++) {
+      await page.clock.runFor(1000)
+      acted = (await dogEl(page).getAttribute('data-action')) ?? ''
+    }
+    expect(IDLE).toContain(acted)
+    await page.getByTestId('pet-dog').click()
+    await expect(dogEl(page)).not.toHaveAttribute('data-action', acted)
+  })
+
+  test('安静：不做随机小动作', async ({ page }) => {
+    await page.clock.install({ time: SAT })
+    await freshGroup(page)
+    await enablePet(page, true, { petActivity: 'quiet', petWorry: false })
+    await expect(page.getByTestId('pet-dog')).toBeVisible()
+    expect([...(await watchIdle(page, 200))]).toEqual([])
+  })
+
+  test('鼠标停 3 秒翻肚皮，此时点击是挠肚皮；在输入框打字时盯着输入框', async ({ page }) => {
+    await page.clock.install({ time: SAT })
+    await freshGroup(page)
+    await enablePet(page, true, { petActivity: 'quiet', petWorry: false })
+    const dog = page.getByTestId('pet-dog')
+    await dog.hover()
+    await page.clock.runFor(3100)
+    await expect(dogEl(page)).toHaveAttribute('data-action', 'belly')
+    await dog.click()
+    await expect(page.getByTestId('pet-bubble')).toContainText('好痒')
+    await expect.poll(async () => (await rpc<{ pats: number }>(page, 'GetPet')).pats).toBe(2)
+    await page.mouse.move(5, 5)
+    await expect(dogEl(page)).not.toHaveAttribute('data-action', 'belly')
+
+    await page.getByTestId('add-input').click()
+    await page.keyboard.type('xie')
+    await expect(page.getByTestId('pet')).toHaveAttribute('data-typing', '1')
+    await expect(page.locator('[data-testid=pet-dog] [data-look]')).toHaveAttribute('data-look', /^-?[0-9.]+,[0-9]/) // 输入框在狗狗下方：往下看
+    await page.clock.runFor(2100)
+    await expect(page.getByTestId('pet')).toHaveAttribute('data-typing', '')
   })
 })
 

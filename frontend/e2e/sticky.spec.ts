@@ -204,10 +204,13 @@ test.describe('便签窗口', () => {
     await freshGroup(page)
     await page.getByTestId('menu-btn').click()
     await page.getByRole('menuitem', { name: '锁定位置' }).click()
+    const lockIcon = page.locator('.titlebar span.iconbtn[title="锁定位置"]')
+    await expect(lockIcon).toBeVisible() // 等锁定状态回来再开菜单，否则菜单文字可能还是旧状态
     await page.getByTestId('menu-btn').click()
     await expect(page.getByRole('menuitem', { name: /回到默认位置/ })).toBeVisible()
     await page.getByRole('menuitem', { name: /回到默认位置/ }).click()
     await expect(page.getByTestId('sticky')).toBeVisible()
+    await expect(lockIcon).toBeVisible() // 回到默认位置不解除锁定
     await page.getByTestId('menu-btn').click()
     await page.getByRole('menuitem', { name: '解除锁定' }).click()
   })

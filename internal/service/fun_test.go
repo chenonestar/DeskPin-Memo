@@ -301,11 +301,11 @@ func TestPetNamingPlaysAndWater(t *testing.T) {
 		t.Fatalf("重置后重新起名: %+v", p)
 	}
 	s := e.svc.GetSettings()
-	if !s.PetHoliday || s.PetWater || s.PetWaterInterval != 45 || s.PetWaterNotify || s.CountdownMoney != "hover" {
+	if !s.PetHoliday || s.PetWater || s.PetWaterInterval != 45 || s.PetWaterNotify || s.CountdownMoney != "hover" || s.PetActivity != "normal" {
 		t.Fatalf("默认值: %+v", s)
 	}
-	s.PetWaterInterval = 7
-	if got, _ := e.svc.SaveSettings(s); got.PetWaterInterval != 45 {
-		t.Fatal(got.PetWaterInterval)
+	s.PetWaterInterval, s.PetActivity = 7, "crazy"
+	if got, _ := e.svc.SaveSettings(s); got.PetWaterInterval != 45 || got.PetActivity != "normal" {
+		t.Fatal(got.PetWaterInterval, got.PetActivity)
 	}
 }

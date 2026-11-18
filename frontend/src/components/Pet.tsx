@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Mous
 import { api, on } from '../api'
 import type { Pet as PetT, PetAccessory, PetEvent, PetGlasses, PetStatus, Settings } from '../types'
 import {
-  anniversary, dueGreeting, GREETING_LINE, holidayOutfit, isSneezeCombo, petLine, petMood, TALK_INTERVAL_MS, WATER_LINE, waterDue,
-  type Greeting, type PetMood,
+  anniversary, BELLY_HOVER_MS, BELLY_MAX_MS, canIdle, dueGreeting, GREETING_LINE, holidayOutfit, IDLE_ACTS, idleInterval, isSneezeCombo,
+  PATROL_MIN_WIDTH, petLine, petMood, pickIdleAct, TALK_INTERVAL_MS, TYPING_LINGER_MS, WATER_LINE, waterDue,
+  type Activity, type Greeting, type IdleAct, type PetMood,
 } from '../fun'
 import { Dog, type PetAction, type PetEffect } from './Dog'
 import { Menu, type MenuEntry } from './Menu'
@@ -26,6 +27,7 @@ const SINGLE_CLICK_DELAY = 250 // 区分单击（摸头）与双击（握手）
 const DRAG_THRESHOLD = 5
 
 type Play = { phase: 'throw' | 'run' | 'back'; dx: number; ballX: number } | null
+type Walk = { dx: number } | null // 巡逻：沿便签底部走到另一头再走回来
 
 /** 坐在便签角落的狗狗（FR-801~810 与二期互动）。 */
 export function PetCorner({ settings, boss = false, onHide }: { settings: Settings; boss?: boolean; onHide: () => void }) {
@@ -44,6 +46,14 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
   const [confirmHide, setConfirmHide] = useState(false)
   const [drag, setDrag] = useState<number | null>(null) // 拖动中：相对起点的水平位移
   const [play, setPlay] = useState<Play>(null)
+  const [walk, setWalk] = useState<Walk>(null)
+  const [typingLook, setTypingLook] = useState<{ x: number; y: number } | null>(null) // 看你打字
+  const lastIdle = useRef<IdleAct | null>(null)
+  const idleTimers = useRef<number[]>([]) // 正在进行的自主动作的计时器（被打断时清掉）
+  const busyRef = useRef(true)
+  const runIdleRef = useRef<() => void>(() => undefined) // 计时器里调用最新一次渲染的 runIdle（避免用到旧的状态）
+  const bellyTimer = useRef<number | null>(null)
+  const typingTimer = useRef<number | null>(null)
   const lastTalk = useRef(Date.now()) // 刚出现时不急着说话
   const newNews = useRef(false)
   const timers = useRef<number[]>([])
@@ -162,7 +172,7 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
   }
 
   // 眼睛跟着鼠标（醒着、没在做动作时）
-  const tracking = !sleepy && mood !== 'happy' && mood !== 'celebrate' && !action && !play && !menu
+  const tracking = !sleepy && mood !== 'happy' && mood !== 'celebrate' && !action && !play && !walk && !typingLook && !menu
   useEffect(() => {
     if (!tracking) { setLook(undefined); return }
     let raf = 0
@@ -183,6 +193,70 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
     document.addEventListener('mouseleave', leave)
     return () => { window.removeEventListener('mousemove', move); document.removeEventListener('mouseleave', leave); if (raf) cancelAnimationFrame(raf) }
   }, [tracking])
+
+  // ---- 自主动作（三期）----
+  const idleBusy = !!(action || play || walk || drag !== null || menu || naming || confirmHide || bubble || reminder || transient || typingLook)
+  busyRef.current = !canIdle({ mood, busy: idleBusy, boss, hidden: false }) // 是否隐藏在计时器触发时再看
+  const stopIdle = () => {
+    idleTimers.current.forEach(clearTimeout); idleTimers.current = []
+    setWalk(null)
+    setAction((a) => (a && a in IDLE_ACTS ? null : a))
+  }
+  useEffect(() => {
+    const activity = (settings.petActivity ?? 'normal') as Activity
+    let t = 0
+    const schedule = () => {
+      const ms = idleInterval(activity, Math.random())
+      if (ms == null) return
+      t = window.setTimeout(() => {
+        if (!busyRef.current && !document.hidden) runIdleRef.current()
+        schedule()
+      }, ms)
+    }
+    schedule()
+    return () => clearTimeout(t)
+  }, [settings.petActivity])
+
+  const runIdle = () => {
+    const parent = rootRef.current?.offsetParent as HTMLElement | null
+    const width = parent?.clientWidth ?? 300
+    const act = pickIdleAct(lastIdle.current, Math.random(), width >= PATROL_MIN_WIDTH)
+    lastIdle.current = act
+    const t = (fn: () => void, ms: number) => { idleTimers.current.push(window.setTimeout(fn, ms)) }
+    if (act === 'patrol') {
+      const dist = Math.max(40, width - 64 - 24) * (settings.petCorner === 'left' ? 1 : -1)
+      setWalk({ dx: dist })
+      t(() => setWalk({ dx: 0.001 }), 3000) // 走回来（非 0 才保留 walking 过渡）
+      t(() => setWalk(null), 6000)
+      return
+    }
+    setAction(act)
+    if (act === 'read' && Date.now() - lastTalk.current >= TALK_INTERVAL_MS && Math.random() < 0.3) say(`${status?.pet.name ?? '博士'}在学习`, 3000)
+    t(() => setAction((a) => (a === act ? null : a)), IDLE_ACTS[act].ms)
+  }
+  runIdleRef.current = runIdle
+
+  // 看你打字：在便签的输入框里打字时盯着输入框，停下 2 秒后恢复
+  useEffect(() => {
+    const onKey = (e: Event) => { // keydown 与 input 都听：输入法 / 粘贴不一定有 keydown
+      const el = e.target as HTMLElement | null
+      if (!el || !(el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') || el.closest('.pet') || el.closest('.modal')) return
+      if (sleepy || boss) return
+      const r = btnRef.current?.getBoundingClientRect()
+      const ir = el.getBoundingClientRect()
+      if (r) {
+        const dx = ir.left + ir.width / 2 - (r.left + r.width / 2)
+        const dy = ir.top + ir.height / 2 - (r.top + r.height * 0.4)
+        const len = Math.max(1, Math.hypot(dx, dy))
+        setTypingLook({ x: dx / len, y: dy / len })
+      }
+      if (typingTimer.current) clearTimeout(typingTimer.current)
+      typingTimer.current = window.setTimeout(() => { typingTimer.current = null; setTypingLook(null) }, TYPING_LINGER_MS)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('input', onKey)
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('input', onKey); if (typingTimer.current) clearTimeout(typingTimer.current) }
+  }, [sleepy, boss])
 
   if (!status) return null
   const pet: PetT = status.pet
@@ -231,6 +305,12 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
   /** 单击 / 双击 / 连点的判定：连点 5 次优先；双击握手；单击延迟一点再摸头。 */
   const onClickDog = () => {
     if (play) return
+    if (action === 'belly') { // 挠肚皮：双倍爱心，计一次摸头
+      flash('hearts', 'happy', 1800)
+      say('好痒～', 2000)
+      void api.patPet().then(() => api.patPet()).catch(() => undefined)
+      return
+    }
     const t = Date.now()
     clicks.current = [...clicks.current.filter((x) => t - x <= 2000), t]
     if (isSneezeCombo(clicks.current, t) && t - sneezeAt.current > 60_000) {
@@ -249,7 +329,9 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
 
   // ---- 拖到另一边 ----
   const onPointerDown = (e: RPointerEvent<HTMLButtonElement>) => {
+    restartBelly() // 「停留 3 秒且不点击」才翻肚皮：每次按下都重新计时
     if (e.button !== 0 || play) return
+    stopIdle() // 你点它、拖它时，正在做的自主动作立即停下
     pointer.current = { x: e.clientX, id: e.pointerId, moved: false }
   }
   const onPointerMove = (e: RPointerEvent<HTMLButtonElement>) => {
@@ -302,13 +384,31 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
     { kind: 'item', label: '暂时收起', onClick: () => setConfirmHide(true) },
   ]
 
+  // 翻肚皮：鼠标在它身上停 3 秒（期间没有点击）
+  const restartBelly = () => { if (bellyTimer.current) onEnterDog() }
+  const onEnterDog = () => {
+    if (bellyTimer.current) clearTimeout(bellyTimer.current)
+    bellyTimer.current = window.setTimeout(() => {
+      bellyTimer.current = null
+      if (sleepy || play || walk || drag !== null || boss) return
+      stopIdle()
+      setAction('belly')
+      later(() => setAction((a) => (a === 'belly' ? null : a)), BELLY_MAX_MS)
+    }, BELLY_HOVER_MS)
+  }
+  const onLeaveDog = () => {
+    if (bellyTimer.current) { clearTimeout(bellyTimer.current); bellyTimer.current = null }
+    setAction((a) => (a === 'belly' ? null : a))
+  }
+
   const left = settings.petCorner === 'left'
-  const dx = drag ?? play?.dx ?? 0
-  const facing = play ? (play.phase === 'back' ? (left ? -1 : 1) : (left ? 1 : -1)) : 1 // 狗狗默认朝右看；跑动时朝跑的方向
+  const dx = drag ?? play?.dx ?? walk?.dx ?? 0
+  const goingOut = play ? play.phase !== 'back' : walk ? Math.abs(walk.dx) > 1 : false
+  const facing = play || walk ? (goingOut ? (left ? 1 : -1) : (left ? -1 : 1)) : 1 // 狗狗默认朝右看；跑动时朝跑的方向
   return (
     <>
-      <div ref={rootRef} className={`pet ${left ? 'left' : 'right'}${drag !== null ? ' dragging' : ''}${play ? ' playing' : ''}`} data-testid="pet"
-        style={{ transform: dx ? `translateX(${dx}px)` : undefined }} data-play={play?.phase ?? ''}>
+      <div ref={rootRef} className={`pet ${left ? 'left' : 'right'}${drag !== null ? ' dragging' : ''}${play ? ' playing' : ''}${walk ? ' walking' : ''}${typingLook ? ' typing' : ''}`} data-testid="pet"
+        style={{ transform: dx ? `translateX(${dx}px)` : undefined }} data-play={play?.phase ?? ''} data-walk={walk ? (Math.abs(walk.dx) > 1 ? 'out' : 'back') : ''} data-typing={typingLook ? '1' : ''}>
         {(bubble || reminder) && (
           <div className="petbubble" role="status" data-testid="pet-bubble" onClick={() => !reminder && setBubble('')}>
             {reminder ? (
@@ -324,9 +424,10 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
         )}
         <button ref={btnRef} className="petbtn" title={`${pet.name}（Lv.${pet.level}）：点我摸头，双击握手，拖动换位置，右键更多`} aria-label={`狗狗 ${pet.name}`} data-testid="pet-dog"
           onClick={swallowClick} onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }) }}
-          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { pointer.current = null; setDrag(null) }}>
+          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { pointer.current = null; setDrag(null) }}
+          onMouseEnter={onEnterDog} onMouseLeave={onLeaveDog}>
           <span className="petface" style={{ transform: facing < 0 ? 'scaleX(-1)' : undefined }}>
-            <Dog mood={mood} accessory={accessory} glasses={pet.glasses} effect={effect} action={action} look={look} />
+            <Dog mood={mood} accessory={accessory} glasses={pet.glasses} effect={effect} action={action} look={typingLook ?? look} />
           </span>
         </button>
       </div>

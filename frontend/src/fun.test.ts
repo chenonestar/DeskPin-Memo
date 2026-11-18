@@ -169,3 +169,35 @@ describe('纪念日 / 问候 / 喝水提醒 / 连点', () => {
     expect(isSneezeCombo([0, 300, 600, 900, 2600], 2700)).toBe(false)
   })
 })
+
+import { canIdle, IDLE_ACTS, idleInterval, pickIdleAct, type IdleAct } from './fun'
+
+describe('自主动作调度', () => {
+  it('间隔：安静不做；正常 1–3 分钟；活泼 30–90 秒', () => {
+    expect(idleInterval('quiet', 0.5)).toBeNull()
+    expect(idleInterval('normal', 0)).toBe(60_000)
+    expect(idleInterval('normal', 0.999999)).toBeLessThanOrEqual(180_000)
+    expect(idleInterval('lively', 0)).toBe(30_000)
+    expect(idleInterval('lively', 0.999999)).toBeLessThanOrEqual(90_000)
+  })
+  it('不连续重复；太窄不巡逻；每个动作都可能被选到', () => {
+    const seen = new Set<IdleAct>()
+    for (let i = 0; i < 1000; i++) {
+      const r = (i + 0.5) / 1000
+      const a = pickIdleAct('lookaround', r, true)
+      expect(a).not.toBe('lookaround')
+      seen.add(a)
+      expect(pickIdleAct(null, r, false)).not.toBe('patrol')
+    }
+    expect(seen.size).toBe(Object.keys(IDLE_ACTS).length - 1)
+    expect(pickIdleAct(null, 0, true)).toBe('lookaround') // 权重最高的排在最前
+  })
+  it('什么时候能做：醒着、平常、不忙、非正经模式、便签可见', () => {
+    const g = { mood: 'normal' as const, busy: false, boss: false, hidden: false }
+    expect(canIdle(g)).toBe(true)
+    for (const m of ['happy', 'celebrate', 'worried', 'sleeping', 'dozing', 'offwork'] as const) expect(canIdle({ ...g, mood: m })).toBe(false)
+    expect(canIdle({ ...g, busy: true })).toBe(false)
+    expect(canIdle({ ...g, boss: true })).toBe(false)
+    expect(canIdle({ ...g, hidden: true })).toBe(false)
+  })
+})

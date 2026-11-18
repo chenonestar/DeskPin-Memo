@@ -128,6 +128,7 @@ export interface Settings {
   petBubbles: boolean
   petWorry: boolean
   petHoliday: boolean
+  petActivity: 'quiet' | 'normal' | 'lively'
   petWater: boolean
   petWaterInterval: number
   petWaterNotify: boolean

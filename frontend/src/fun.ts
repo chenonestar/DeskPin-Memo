@@ -260,3 +260,61 @@ export const WATER_LINE = { water: '喝口水吧～', stand: '起来走走、伸
 export function isSneezeCombo(clicks: number[], now: number): boolean {
   return clicks.filter((t) => now - t <= 2000).length >= 5
 }
+
+// ---------------------------------------------------------------- 自主动作（三期）
+
+/** 十个随机小动作。 */
+export type IdleAct = 'yawn' | 'scratch' | 'shakeoff' | 'lookaround' | 'chase' | 'clean' | 'read' | 'patrol' | 'butterfly' | 'liedown'
+export type Activity = 'quiet' | 'normal' | 'lively'
+
+/** 每个动作的时长（毫秒）与出现权重：常见的小动作多些，大动作少些。 */
+export const IDLE_ACTS: Record<IdleAct, { ms: number; weight: number; label: string }> = {
+  lookaround: { ms: 3000, weight: 5, label: '东张西望' },
+  yawn: { ms: 1500, weight: 4, label: '打哈欠' },
+  scratch: { ms: 2000, weight: 4, label: '挠痒痒' },
+  shakeoff: { ms: 1000, weight: 3, label: '抖抖身子' },
+  liedown: { ms: 8000, weight: 3, label: '趴下休息' },
+  clean: { ms: 3000, weight: 2, label: '擦眼镜' },
+  chase: { ms: 2500, weight: 2, label: '追尾巴' },
+  read: { ms: 6000, weight: 2, label: '看书' },
+  butterfly: { ms: 3000, weight: 1, label: '捉蝴蝶' },
+  patrol: { ms: 6000, weight: 1, label: '巡逻' },
+}
+
+/** 巡逻需要的最小宽度（像素）。 */
+export const PATROL_MIN_WIDTH = 240
+
+/** 下一次自主动作的间隔（毫秒）；「安静」返回 null（不做随机动作）。rand ∈ [0,1)。 */
+export function idleInterval(activity: Activity, rand: number): number | null {
+  if (activity === 'quiet') return null
+  const [lo, hi] = activity === 'lively' ? [30_000, 90_000] : [60_000, 180_000]
+  return Math.round(lo + (hi - lo) * Math.min(Math.max(rand, 0), 0.999999))
+}
+
+/** 按权重挑一个动作：不连续重复上一个；便签太窄时不巡逻。rand ∈ [0,1)。 */
+export function pickIdleAct(prev: IdleAct | null, rand: number, canPatrol: boolean): IdleAct {
+  const pool = (Object.keys(IDLE_ACTS) as IdleAct[]).filter((a) => a !== prev && (canPatrol || a !== 'patrol'))
+  const total = pool.reduce((n, a) => n + IDLE_ACTS[a].weight, 0)
+  let x = Math.min(Math.max(rand, 0), 0.999999) * total
+  for (const a of pool) {
+    x -= IDLE_ACTS[a].weight
+    if (x < 0) return a
+  }
+  return pool[pool.length - 1]
+}
+
+export interface IdleGate {
+  mood: PetMood
+  busy: boolean // 正在提醒 / 说话 / 拖动 / 玩球 / 互动 / 菜单或对话框开着
+  boss: boolean
+  hidden: boolean // 便签被隐藏 / 最小化
+}
+
+/** 现在能不能做随机动作：醒着、心情平常、没在忙。 */
+export const canIdle = (g: IdleGate) => g.mood === 'normal' && !g.busy && !g.boss && !g.hidden
+
+/** 鼠标在狗狗身上停留多久翻肚皮（毫秒）；翻肚皮最长持续多久。 */
+export const BELLY_HOVER_MS = 3000
+export const BELLY_MAX_MS = 6000
+/** 停止打字多久后不再盯着输入框（毫秒）。 */
+export const TYPING_LINGER_MS = 2000

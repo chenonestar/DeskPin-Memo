@@ -191,6 +191,10 @@ function PetSection({ s, patch }: P) {
             </select></div>
           <Check label="偶尔说句话（每小时最多一次）" checked={s.petBubbles} onChange={(v) => void patch({ petBubbles: v })} />
           <Check label="有逾期事项时露出担心的表情" checked={s.petWorry} onChange={(v) => void patch({ petWorry: v })} />
+          <div className="rowline"><label htmlFor="pact">活跃程度</label>
+            <select id="pact" value={s.petActivity} onChange={(e) => void patch({ petActivity: e.target.value as S['petActivity'] })}>
+              <option value="quiet">安静（不做随机小动作）</option><option value="normal">正常（1–3 分钟一个小动作）</option><option value="lively">活泼（30–90 秒一个小动作）</option>
+            </select></div>
           <Check label="节日自动装扮（春节、端午、中秋等）" checked={s.petHoliday} onChange={(v) => void patch({ petHoliday: v })} />
           <Check label="喝水 / 起身提醒" checked={s.petWater} onChange={(v) => void patch({ petWater: v })} />
           {s.petWater && (
