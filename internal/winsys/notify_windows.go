@@ -5,12 +5,14 @@ package winsys
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 	u16 "unicode/utf16"
 
 	"deskpinmemo/internal/scheduler"
@@ -53,7 +55,12 @@ func (t *Toaster) SetFull(on bool) { t.full.Store(on) }
 // Notify 实现 scheduler.Notifier。完整模式下按钮用协议激活，点击后由系统启动 DeskPinMemo.exe deskpin://…，
 // 单实例机制会把参数转交给已运行的实例。
 func (t *Toaster) Notify(n scheduler.Notification) error {
-	return runPowerShell(toastScript(n, t.IconPath, t.full.Load()))
+	full := t.full.Load()
+	start := time.Now()
+	err := runPowerShell(toastScript(n, t.IconPath, full))
+	// 每次发送都记一行（成功也记），便于排查「通知只弹一次」之类的问题；不含标题和正文
+	log.Print(toast.LogLine(toast.Kind(n), full, time.Since(start), err))
+	return err
 }
 
 // RemoveToast 撤回已弹出的通知（其他设备已处理该提醒，AC-S04）。
