@@ -79,7 +79,7 @@ func main() {
 	shell := &app.NopShell{R: app.Rect{X: 100, Y: 100, W: 300, H: 420}, Mode: "desktop"}
 	a := app.New(svc, shell, "dev")
 	var notified string // 最近一次系统通知（端到端测试据此确认）
-	a.Notify = func(title, body string) { notified = title + "｜" + body }
+	a.Notify = func(tag, title, body string) error { notified = title + "｜" + body; return nil }
 	if *portable {
 		shell.EmptyReg = true
 		var prev *regtrace.State

@@ -57,9 +57,15 @@ func (t *Toaster) SetFull(on bool) { t.full.Store(on) }
 func (t *Toaster) Notify(n scheduler.Notification) error {
 	full := t.full.Load()
 	start := time.Now()
-	err := runPowerShell(toastScript(n, t.IconPath, full))
-	// 每次发送都记一行（成功也记），便于排查「通知只弹一次」之类的问题；不含标题和正文
-	log.Print(toast.LogLine(toast.Kind(n), full, time.Since(start), err))
+	// 先直接调用 Windows 通知接口；失败（例如很老的系统）才退回 PowerShell
+	method := toast.MethodNative
+	err := pushNative(toast.ID(full), toast.XML(n, t.IconPath, full))
+	if err != nil {
+		method = "直接调用失败（" + toast.Mask(err) + "），改用 PowerShell"
+		err = runPowerShell(toastScript(n, t.IconPath, full))
+	}
+	// 每次发送都记一行（成功也记），便于排查；不含标题和正文
+	log.Print(toast.LogLine(toast.Kind(n), full, method, time.Since(start), err))
 	return err
 }
 

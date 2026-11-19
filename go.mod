@@ -3,6 +3,7 @@ module deskpinmemo
 go 1.26.0
 
 require (
+	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3
 	github.com/google/uuid v1.6.0
 	github.com/teambition/rrule-go v1.8.2
 	github.com/wailsapp/wails/v2 v2.16.0
@@ -14,7 +15,6 @@ require (
 )
 
 require (
-	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect

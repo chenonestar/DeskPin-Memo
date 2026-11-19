@@ -1,6 +1,8 @@
 package app
 
 import (
+	"errors"
+
 	"deskpinmemo/internal/service"
 	"deskpinmemo/internal/store"
 )
@@ -53,8 +55,16 @@ func (a *App) PetNotify(text string) error {
 	if p, err := a.svc.GetPet(); err == nil {
 		name = p.Name
 	}
-	a.Notify(name+"提醒你", text)
-	return nil
+	return a.Notify("pet", name+"提醒你", text)
+}
+
+// TestNotification 发一条测试通知（设置 → 摸鱼「发送测试通知」），用来确认这台电脑能否弹出系统通知。
+// 返回 nil 只表示已交给 Windows；是否真的弹出取决于系统的通知设置。发送记录写在日志里。
+func (a *App) TestNotification() error {
+	if a.Notify == nil {
+		return errors.New("当前环境不支持系统通知")
+	}
+	return a.Notify("test", "桌面备忘钉 · 测试通知", "看到这条，说明这台电脑可以正常弹出系统通知。")
 }
 func (a *App) SetPetLook(acc, glasses string) (service.PetView, error) {
 	return a.svc.SetPetLook(acc, glasses)

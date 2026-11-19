@@ -43,13 +43,13 @@ func TestLeanModeNeedsNoRegistration(t *testing.T) {
 
 func TestLogLineHasNoUserContent(t *testing.T) {
 	n := scheduler.Notification{Title: "机密：给王总的报价", Body: "底价 88 万", Tag: "item-1", Strong: true}
-	ok := LogLine(Kind(n), false, 820*time.Millisecond, nil)
-	if ok != "系统通知：强提醒，借用 PowerShell 身份，成功，耗时 820 ms" {
+	ok := LogLine(Kind(n), false, MethodNative, 820*time.Millisecond, nil)
+	if ok != "系统通知：强提醒，借用 PowerShell 身份，直接调用，成功，耗时 820 ms" {
 		t.Fatal(ok)
 	}
 	err := errors.New("exit status 1: 使用“1”个参数调用“LoadXml”时发生异常: $x.LoadXml('<toast><text>机密：给王总的报价</text></toast>')\n第二行 底价 88 万")
-	bad := LogLine(Kind(scheduler.Notification{Tag: "pet"}), true, 3*time.Second, err)
-	if strings.Contains(bad, "机密") || strings.Contains(bad, "88 万") || !strings.Contains(bad, "失败") || !strings.Contains(bad, "狗狗提醒") || !strings.Contains(bad, "程序自己的身份") || !strings.Contains(bad, "3000 ms") {
+	bad := LogLine(Kind(scheduler.Notification{Tag: "pet"}), true, "直接调用失败（"+Mask(err)+"），改用 PowerShell", 3*time.Second, err)
+	if strings.Count(bad, "机密") > 0 || !strings.Contains(bad, "改用 PowerShell") || Kind(scheduler.Notification{Tag: "test"}) != "测试通知" || strings.Contains(bad, "88 万") || !strings.Contains(bad, "失败") || !strings.Contains(bad, "狗狗提醒") || !strings.Contains(bad, "程序自己的身份") || !strings.Contains(bad, "3000 ms") {
 		t.Fatal(bad)
 	}
 	if Kind(scheduler.Notification{Summary: true}) != "提醒汇总" || Kind(scheduler.Notification{Missed: true}) != "错过的提醒" || Kind(scheduler.Notification{}) != "提醒" {

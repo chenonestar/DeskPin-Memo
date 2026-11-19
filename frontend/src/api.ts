@@ -179,6 +179,7 @@ export const api = {
   playBall: () => call<Pet>('PlayBall'),
   drinkWater: () => call<Pet>('DrinkWater'),
   petNotify: (text: string) => call<void>('PetNotify', text),
+  testNotification: () => call<void>('TestNotification'),
   setPetLook: (acc: string, glasses: string) => call<Pet>('SetPetLook', acc, glasses),
   idleSeconds: () => call<number>('IdleSeconds'),
   // 摸鱼：正经模式

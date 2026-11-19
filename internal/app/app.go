@@ -38,8 +38,8 @@ type App struct {
 	bossPrev    string        // 进入正经模式前显示的分组（切到了指定分组时，退出时切回）
 	Version     string
 	Emit        func(event string, data any)
-	// Notify 发一条普通系统通知（外壳注入；为空时不发）。
-	Notify func(title, body string)
+	// Notify 发一条普通系统通知（外壳注入；为空时不发）。tag 用于日志里区分种类（pet / test）。
+	Notify func(tag, title, body string) error
 }
 
 type quickSaved struct {

@@ -327,6 +327,15 @@ test.describe('摸鱼：下班倒计时与正经模式', () => {
     await expect(page.getByTestId('group-name')).toContainText(g.name)
   })
 
+  test('摸鱼页：发送测试通知', async ({ page }) => {
+    await freshGroup(page)
+    await rpc(page, 'OpenSettings')
+    await page.getByRole('tab', { name: '摸鱼' }).click()
+    await page.getByTestId('notify-test').click()
+    await expect(page.getByTestId('notify-test-result')).toContainText('已发送')
+    await expect.poll(async () => ((await page.request.get('/__dev/shell')).json() as Promise<{ notified: string }>).then((x) => x.notified)).toContain('测试通知')
+  })
+
   test('快捷键页有正经模式；摸鱼页说明', async ({ page }) => {
     await freshGroup(page)
     await rpc(page, 'OpenSettings')

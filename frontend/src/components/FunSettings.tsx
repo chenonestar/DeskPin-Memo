@@ -12,6 +12,7 @@ export function FunPane({ s, patch, groups, onSettings }: P & { groups: Group[];
     <>
       <News s={s} patch={patch} onSettings={onSettings} />
       <PetSection s={s} patch={patch} />
+      <NotifyTest />
       <h4>下班倒计时</h4>
       <Check label="在便签底部显示下班倒计时" checked={s.showCountdown} onChange={(v) => void patch({ showCountdown: v })} />
       <div className="rowline"><label htmlFor="ws">上班时间</label>
@@ -215,6 +216,25 @@ function PetSection({ s, patch }: P) {
         onCancel={async () => { if (!pet.named) setPet(await api.renamePet(pet.name)); setNaming(false) }} />}
       {reset && <ConfirmDialog title="重置成长进度" message="等级、经验、装扮和名字都会恢复初始状态，之后重新给它起名。" okText="重置"
         onOk={async () => { setPet(await api.resetPet()); setReset(false) }} onCancel={() => setReset(false)} />}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------- 系统通知测试
+
+function NotifyTest() {
+  const [state, setState] = useState<'' | 'sending' | 'sent' | string>('')
+  const send = async () => {
+    setState('sending')
+    try { await api.testNotification(); setState('sent') } catch (e) { setState((e as Error).message || '发送失败') }
+  }
+  return (
+    <>
+      <h4>系统通知</h4>
+      <div className="rowline"><button className="btn" disabled={state === 'sending'} onClick={() => void send()} data-testid="notify-test">发送一条测试通知</button></div>
+      {state === 'sent' && <div className="hint" data-testid="notify-test-result">已发送。如果屏幕右下角没有弹出，请检查 Windows 设置 → 系统 → 通知；每次发送的结果都记在 logs\app.log 里（搜「系统通知」）。</div>}
+      {state && state !== 'sent' && state !== 'sending' && <div className="err" role="alert" data-testid="notify-test-result">发送失败：{state}</div>}
+      <div className="hint">事项到点提醒、狗狗的喝水 / 起身提醒都会用到系统通知。</div>
     </>
   )
 }

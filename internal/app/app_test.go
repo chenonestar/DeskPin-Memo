@@ -439,7 +439,7 @@ func TestOpenNewsItemUsesBrowserOnlyForWebLinks(t *testing.T) {
 func TestPetNotifyOnlyWhenEnabled(t *testing.T) {
 	a, _ := newApp(t)
 	var got []string
-	a.Notify = func(title, body string) { got = append(got, title+"|"+body) }
+	a.Notify = func(tag, title, body string) error { got = append(got, tag+"|"+title+"|"+body); return nil }
 	_ = a.PetNotify("喝口水吧")
 	s := a.GetSettings()
 	s.PetEnabled, s.PetWater = true, true
@@ -451,7 +451,14 @@ func TestPetNotifyOnlyWhenEnabled(t *testing.T) {
 	s.PetWaterNotify = true
 	a.SaveSettings(s)
 	_ = a.PetNotify("喝口水吧")
-	if len(got) != 1 || got[0] != "博士提醒你|喝口水吧" {
+	if len(got) != 1 || got[0] != "pet|博士提醒你|喝口水吧" {
 		t.Fatal(got)
+	}
+	if err := a.TestNotification(); err != nil || len(got) != 2 || got[1][:5] != "test|" {
+		t.Fatal("测试通知不受喝水提醒设置影响", err, got)
+	}
+	a.Notify = nil
+	if err := a.TestNotification(); err == nil {
+		t.Fatal("没有外壳时应报错")
 	}
 }
