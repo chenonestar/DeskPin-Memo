@@ -161,8 +161,9 @@ func main() {
 	mux.HandleFunc("/__dev/shell", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			var in struct {
-				Native *bool `json:"native"`
-				Idle   *int  `json:"idle"`
+				Native   *bool   `json:"native"`
+				Idle     *int    `json:"idle"`
+				Notified *string `json:"notified"` // 清空最近一条通知记录
 			}
 			_ = json.NewDecoder(r.Body).Decode(&in)
 			if in.Native != nil {
@@ -170,6 +171,9 @@ func main() {
 			}
 			if in.Idle != nil {
 				shell.Idle = *in.Idle
+			}
+			if in.Notified != nil {
+				notified = *in.Notified
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")

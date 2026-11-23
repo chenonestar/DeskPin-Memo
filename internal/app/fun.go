@@ -58,6 +58,16 @@ func (a *App) PetNotify(text string) error {
 	return a.Notify("pet", name+"提醒你", text)
 }
 
+// SetPetAlert 前端在狗狗卷起便签（喝水 / 起身提醒）时开启、展开后关闭：期间和强提醒一样
+// 暂停鼠标穿透并恢复不透明，保证按钮点得到；结束后按保存的状态恢复。
+func (a *App) SetPetAlert(on bool) {
+	if a.petAlert == on {
+		return
+	}
+	a.petAlert = on
+	a.applyEffects()
+}
+
 // TestNotification 发一条测试通知（设置 → 摸鱼「发送测试通知」），用来确认这台电脑能否弹出系统通知。
 // 返回 nil 只表示已交给 Windows；是否真的弹出取决于系统的通知设置。发送记录写在日志里。
 func (a *App) TestNotification() error {

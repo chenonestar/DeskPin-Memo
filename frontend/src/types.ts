@@ -132,6 +132,7 @@ export interface Settings {
   petWater: boolean
   petWaterInterval: number
   petWaterNotify: boolean
+  petWaterStyle: 'roll' | 'bubble' // 提醒方式：卷起便签（默认）| 只冒气泡
   showCountdown: boolean
   workStart: string
   workEnd: string

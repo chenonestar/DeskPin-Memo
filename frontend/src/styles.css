@@ -369,3 +369,54 @@ button.tickerline:hover > span:first-child { text-decoration: underline; }
 .pet.walking { transition: transform 3s linear; }
 .pet.walking .dog-all { animation: hop 0.45s ease-in-out infinite; }
 .pet.typing .dog-head { transform-origin: 100px 110px; transform: rotate(-10deg); transition: transform 0.3s; }
+
+/* ---------- 喝水 / 起身提醒：狗狗卷起便签 ---------- */
+.pet.summoned { transition: transform 0.6s ease-out; }
+.pet.summoned[data-roll="call"] .dog-all { animation: hop 0.3s ease-in-out infinite; }
+.pet[data-roll="rolling"] .dog-all { animation: tugjump 0.7s ease-out 1; } /* 跳起来咬住纸边往下一拽，松口 */
+@keyframes tugjump { 0% { transform: translateY(0); } 35% { transform: translateY(-22px); } 60% { transform: translateY(6px); } 100% { transform: translateY(0); } }
+
+.rollshade { position: absolute; left: 0; right: 0; top: 28px; bottom: 0; z-index: 20; }
+.rollshade.call { pointer-events: none; }
+/* 墙面：从下往上露出来（与纸筒同步）。不透明，挡住下面的事项 */
+.rollwall {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 8px 12px 14px;
+  background: color-mix(in srgb, var(--sticky-bg, #FFF3B0) 82%, #8A6D3B);
+  background-image: repeating-linear-gradient(90deg, transparent 0 18px, rgba(0, 0, 0, 0.035) 18px 19px);
+  clip-path: inset(100% 0 0 0); transition: clip-path 1.2s cubic-bezier(.55, 0, .25, 1);
+}
+.rollshade.rolling .rollwall, .rollshade.rolled .rollwall, .rollshade.finish .rollwall { clip-path: inset(0 0 0 0); transition-duration: 1.4s; transition-timing-function: cubic-bezier(.3, 1.25, .5, 1); }
+/* 纸筒：卷起来的便签纸，从底边一路卷到标题栏下方，轻轻弹一下 */
+.rolltube {
+  position: absolute; left: -2px; right: -2px; top: calc(100% - 14px); height: 14px; border-radius: 7px; opacity: 0;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--sticky-bg, #FFF3B0) 70%, #fff), var(--sticky-bg, #FFF3B0) 45%, color-mix(in srgb, var(--sticky-bg, #FFF3B0) 75%, #6b5a2e));
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.22); transition: top 1.2s cubic-bezier(.55, 0, .25, 1), opacity 0.2s 1s;
+}
+.rollshade.rolling .rolltube, .rollshade.rolled .rolltube, .rollshade.finish .rolltube {
+  top: 0; opacity: 1; transition: top 1.4s cubic-bezier(.3, 1.25, .5, 1), opacity 0.15s;
+}
+.rollcard { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; color: #3b3222; max-width: 100%; }
+.rolldog { width: 64px; height: 64px; flex: none; }
+.rollshade.stand.rolled .rolldog { animation: rollstretch 1.6s ease-in-out infinite; transform-origin: 50% 100%; }
+.rollshade.water.finish .dog-head { animation: lap 0.25s ease-in-out infinite; }
+@keyframes rollstretch { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.12) scaleX(0.94); } }
+@keyframes lap { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(5px); } }
+.rollline { font-weight: 600; font-size: 14px; line-height: 1.4; }
+.rollsub { font-size: 12px; opacity: 0.75; }
+.rollbtns { display: flex; gap: 8px; justify-content: center; margin-top: 4px; flex-wrap: wrap; }
+/* 窗口很矮：狗狗缩小，文字和按钮排成一行 */
+@media (max-height: 180px) {
+  .rollcard { flex-direction: row; text-align: left; gap: 8px; }
+  .rolldog { width: 44px; height: 44px; }
+  .rolldog svg { width: 44px; height: 44px; }
+  .rollline { font-size: 13px; }
+  .rollbtns { justify-content: flex-start; margin-top: 2px; }
+}
+/* 系统开了「减少动画」：不卷动，淡入淡出 */
+@media (prefers-reduced-motion: reduce) {
+  .rollwall, .rollshade.rolling .rollwall, .rollshade.rolled .rollwall, .rollshade.finish .rollwall { clip-path: none; transition: opacity 0.3s; }
+  .rollwall { opacity: 0; }
+  .rollshade.rolling .rollwall, .rollshade.rolled .rollwall, .rollshade.finish .rollwall { opacity: 1; }
+  .rolltube { display: none; }
+  .pet.summoned { transition: none; }
+}

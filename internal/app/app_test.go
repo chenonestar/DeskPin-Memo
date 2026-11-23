@@ -462,3 +462,29 @@ func TestPetNotifyOnlyWhenEnabled(t *testing.T) {
 		t.Fatal("没有外壳时应报错")
 	}
 }
+
+func TestPetAlertSuspendsClickThroughAndFade(t *testing.T) {
+	a, sh := newApp(t)
+	a.SetClickThrough(true)
+	if _, err := a.SetWindowOpacity(0.5); err != nil {
+		t.Fatal(err)
+	}
+	if !sh.ClickThrough || sh.Opacity != 0.5 {
+		t.Fatalf("前提: ct=%v opacity=%v", sh.ClickThrough, sh.Opacity)
+	}
+	a.SetPetAlert(true)
+	if sh.ClickThrough || sh.Opacity != 1 {
+		t.Fatalf("狗狗卷起便签期间要能点按钮、看得清: ct=%v opacity=%v", sh.ClickThrough, sh.Opacity)
+	}
+	a.SetPetAlert(true) // 重复调用无副作用
+	a.SetPetAlert(false)
+	if !sh.ClickThrough || sh.Opacity != 0.5 {
+		t.Fatalf("展开后恢复: ct=%v opacity=%v", sh.ClickThrough, sh.Opacity)
+	}
+	a.ShowStrongAlert(scheduler.Notification{Title: "x", Strong: true})
+	a.SetPetAlert(true)
+	a.SetPetAlert(false)
+	if sh.ClickThrough {
+		t.Fatal("强提醒还没处理时不能因为狗狗结束而恢复穿透")
+	}
+}

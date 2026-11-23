@@ -201,3 +201,36 @@ describe('自主动作调度', () => {
     expect(canIdle({ ...g, hidden: true })).toBe(false)
   })
 })
+
+import { nextRollPhase, reminderStart, ROLL_WAIT_MAX_MS, ROLL_WAIT_TYPING_MS, snoozeLast } from './fun'
+
+describe('卷起便签', () => {
+  it('阶段按顺序走，卷着时等你回答', () => {
+    expect(nextRollPhase('call')).toBe('rolling')
+    expect(nextRollPhase('rolling')).toBe('rolled')
+    expect(nextRollPhase('rolled')).toBe('rolled')
+    expect(nextRollPhase('rolled', 'done')).toBe('finish')
+    expect(nextRollPhase('rolled', 'snooze')).toBe('unrolling')
+    expect(nextRollPhase('finish')).toBe('unrolling')
+    expect(nextRollPhase('unrolling')).toBeNull()
+  })
+  it('到点时：折叠只发通知、气泡方式、正忙就等、否则卷起', () => {
+    const base = { style: 'roll', collapsed: false, typedAgoMs: null, dialogOpen: false, editingRow: false, waitedMs: 0 }
+    expect(reminderStart(base)).toBe('roll')
+    expect(reminderStart({ ...base, collapsed: true })).toBe('notify')
+    expect(reminderStart({ ...base, collapsed: true, style: 'bubble' })).toBe('notify')
+    expect(reminderStart({ ...base, style: 'bubble', typedAgoMs: 0 })).toBe('bubble') // 气泡不挡东西，不用等
+    expect(reminderStart({ ...base, typedAgoMs: 3000 })).toBe('wait')
+    expect(reminderStart({ ...base, typedAgoMs: ROLL_WAIT_TYPING_MS })).toBe('roll')
+    expect(reminderStart({ ...base, dialogOpen: true })).toBe('wait')
+    expect(reminderStart({ ...base, editingRow: true })).toBe('wait')
+    expect(reminderStart({ ...base, dialogOpen: true, waitedMs: ROLL_WAIT_MAX_MS })).toBe('bubble') // 一直忙：别再等了，冒个气泡
+  })
+  it('10 分钟后：推算出的上次提醒时间正好在 10 分钟后到期', () => {
+    const now = new Date(2026, 10, 16, 10, 0) // 周一
+    const last = snoozeLast(now.getTime(), 45)
+    const inp = { enabled: true, intervalMin: 45, lastAt: last, workStart: '09:00', workEnd: '18:00', dnd: { enabled: false, start: '22:00', end: '08:00' }, idleSeconds: 0, boss: false }
+    expect(waterDue({ ...inp, now: new Date(now.getTime() + 9 * 60_000) })).toBe(false)
+    expect(waterDue({ ...inp, now: new Date(now.getTime() + 10 * 60_000) })).toBe(true)
+  })
+})

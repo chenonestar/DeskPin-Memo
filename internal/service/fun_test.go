@@ -301,11 +301,15 @@ func TestPetNamingPlaysAndWater(t *testing.T) {
 		t.Fatalf("重置后重新起名: %+v", p)
 	}
 	s := e.svc.GetSettings()
-	if !s.PetHoliday || s.PetWater || s.PetWaterInterval != 45 || s.PetWaterNotify || s.CountdownMoney != "hover" || s.PetActivity != "normal" {
+	if !s.PetHoliday || s.PetWater || s.PetWaterInterval != 45 || s.PetWaterNotify || s.CountdownMoney != "hover" || s.PetActivity != "normal" || s.PetWaterStyle != "roll" {
 		t.Fatalf("默认值: %+v", s)
 	}
-	s.PetWaterInterval, s.PetActivity = 7, "crazy"
-	if got, _ := e.svc.SaveSettings(s); got.PetWaterInterval != 45 || got.PetActivity != "normal" {
-		t.Fatal(got.PetWaterInterval, got.PetActivity)
+	s.PetWaterInterval, s.PetActivity, s.PetWaterStyle = 7, "crazy", "spin"
+	if got, _ := e.svc.SaveSettings(s); got.PetWaterInterval != 45 || got.PetActivity != "normal" || got.PetWaterStyle != "roll" {
+		t.Fatal(got.PetWaterInterval, got.PetActivity, got.PetWaterStyle)
+	}
+	s.PetWaterStyle = "bubble"
+	if got, _ := e.svc.SaveSettings(s); got.PetWaterStyle != "bubble" {
+		t.Fatal(got.PetWaterStyle)
 	}
 }

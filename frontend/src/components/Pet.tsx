@@ -3,12 +3,14 @@ import { api, on } from '../api'
 import type { Pet as PetT, PetAccessory, PetEvent, PetGlasses, PetStatus, Settings } from '../types'
 import {
   anniversary, BELLY_HOVER_MS, BELLY_MAX_MS, canIdle, dueGreeting, GREETING_LINE, holidayOutfit, IDLE_ACTS, idleInterval, isSneezeCombo,
-  PATROL_MIN_WIDTH, petLine, petMood, pickIdleAct, TALK_INTERVAL_MS, TYPING_LINGER_MS, WATER_LINE, waterDue,
+  PATROL_MIN_WIDTH, petLine, petMood, pickIdleAct, TALK_INTERVAL_MS, TYPING_LINGER_MS, WATER_LINE,
   type Activity, type Greeting, type IdleAct, type PetMood,
 } from '../fun'
 import { Dog, type PetAction, type PetEffect } from './Dog'
 import { Menu, type MenuEntry } from './Menu'
 import { ConfirmDialog, Modal } from './Dialog'
+import { petStore as store } from '../petStore'
+import type { WaterCtl } from './WaterShade'
 
 export const ACCESSORY_LABEL: Record<PetAccessory, string> = { '': '不戴', bow: '领结', scarf: '围巾', hat: '毛线帽', crown: '皇冠' }
 export const GLASSES_LABEL: Record<PetGlasses, string> = { round: '圆框眼镜', square: '方框眼镜', sunglasses: '墨镜', gold: '金边眼镜' }
@@ -16,11 +18,6 @@ export const GLASSES_LABEL: Record<PetGlasses, string> = { round: '圆框眼镜'
 const UNLOCKS: Record<number, string> = { 2: '领结', 3: '方框眼镜', 4: '围巾', 5: '墨镜', 6: '毛线帽', 7: '金边眼镜', 9: '皇冠' }
 export const NAME_SUGGESTIONS = ['博士', '摸摸', '鱼丸']
 
-/** 只在本机浏览器里记的小状态（每天的问候 / 纪念日 / 喝水提醒时间）。存储不可用时退化为不记（最多重复说一次）。 */
-const store = {
-  get: (k: string) => { try { return localStorage.getItem('deskpin.pet.' + k) } catch { return null } },
-  set: (k: string, v: string) => { try { localStorage.setItem('deskpin.pet.' + k, v) } catch { /* 忽略 */ } },
-}
 const todayKey = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 
 const SINGLE_CLICK_DELAY = 250 // 区分单击（摸头）与双击（握手）
@@ -30,13 +27,15 @@ type Play = { phase: 'throw' | 'run' | 'back'; dx: number; ballX: number } | nul
 type Walk = { dx: number } | null // 巡逻：沿便签底部走到另一头再走回来
 
 /** 坐在便签角落的狗狗（FR-801~810 与二期互动）。 */
-export function PetCorner({ settings, boss = false, onHide }: { settings: Settings; boss?: boolean; onHide: () => void }) {
+export function PetCorner({ settings, boss = false, onHide, water }: { settings: Settings; boss?: boolean; onHide: () => void; water: WaterCtl }) {
   const [status, setStatus] = useState<PetStatus | null>(null)
   const [transient, setTransient] = useState<'happy' | 'celebrate' | null>(null)
   const [effect, setEffect] = useState<PetEffect>(null)
   const [action, setAction] = useState<PetAction>(null)
   const [bubble, setBubble] = useState('')
-  const [reminder, setReminder] = useState<'water' | 'stand' | null>(null)
+  const reminder = water.r?.mode === 'bubble' ? water.r.kind : null // 气泡方式的喝水 / 起身提醒
+  const rollPhase = water.r?.mode === 'roll' ? water.r.phase : null // 卷起便签的阶段
+  const [summon, setSummon] = useState<number | null>(null) // 卷便签时跑到中间（水平位移）
   const [idle, setIdle] = useState(0)
   const [now, setNow] = useState(() => new Date())
   const [awakeUntil, setAwakeUntil] = useState(0)
@@ -146,33 +145,31 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
     }
   }, [now, status?.pet.createdAt, boss])
 
-  // 喝水 / 起身提醒
+  // 喝水 / 起身提醒（调度在便签那一层，见 WaterShade）：你在忙时先说一声；结束后说句话
+  useEffect(() => { if (water.waiting) say('到点喝水啦，等你忙完～', 4000) }, [water.waiting])
   useEffect(() => {
-    if (!status || reminder) return
-    const lastRaw = store.get('water.last')
-    const due = waterDue({ now, enabled: settings.petWater, intervalMin: settings.petWaterInterval, lastAt: lastRaw ? Number(lastRaw) : null,
-      workStart: settings.workStart, workEnd: settings.workEnd, dnd: settings.dnd, idleSeconds: idle, boss })
-    if (!due) return
-    const kind = store.get('water.kind') === 'water' ? 'stand' : 'water' // 喝水和起身交替
-    store.set('water.kind', kind)
-    store.set('water.last', String(now.getTime()))
-    setReminder(kind)
-    setAction(kind === 'water' ? 'water' : null)
-    void api.petNotify(WATER_LINE[kind]).catch(() => undefined)
-    later(() => { setReminder((r) => (r === kind ? null : r)); setAction((a) => (a === 'water' ? null : a)) }, 120_000) // 两分钟没理会就收起
-  }, [now, idle, status, reminder, boss, settings.petWater, settings.petWaterInterval, settings.workStart, settings.workEnd, settings.dnd])
-
-  const answerReminder = async (snooze: boolean) => {
-    const kind = reminder
-    setReminder(null); setAction(null)
-    if (snooze) { store.set('water.last', String(Date.now() - settings.petWaterInterval * 60_000 + 10 * 60_000)); return }
-    if (kind === 'water') { try { await api.drinkWater(); await load() } catch { /* 忽略 */ } }
-    flash(null, 'happy', 1500)
-    say(kind === 'water' ? '咕嘟咕嘟，舒服～' : '伸个懒腰，舒服多了', 3000)
-  }
+    const c = water.cheer
+    if (!c) return
+    void load()
+    if (c.happy) flash(null, 'happy', 1500)
+    say(c.text, 3000)
+  }, [water.cheer?.n])
+  // 卷便签：先跑到便签底部中间；结束后跑回角落
+  useEffect(() => {
+    if (rollPhase === 'call') {
+      stopIdle()
+      setBubble('')
+      const width = (rootRef.current?.offsetParent as HTMLElement | null)?.clientWidth ?? 300
+      setSummon((width / 2 - 38) * (settings.petCorner === 'left' ? 1 : -1))
+    } else if (rollPhase === null) {
+      setSummon((x) => (x === null ? null : 0.001)) // 非 0 才保留过渡
+      const t = window.setTimeout(() => setSummon(null), 700)
+      return () => clearTimeout(t)
+    }
+  }, [rollPhase])
 
   // 眼睛跟着鼠标（醒着、没在做动作时）
-  const tracking = !sleepy && mood !== 'happy' && mood !== 'celebrate' && !action && !play && !walk && !typingLook && !menu
+  const tracking = !sleepy && mood !== 'happy' && mood !== 'celebrate' && !action && !play && !walk && !typingLook && !menu && summon === null
   useEffect(() => {
     if (!tracking) { setLook(undefined); return }
     let raf = 0
@@ -195,7 +192,7 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
   }, [tracking])
 
   // ---- 自主动作（三期）----
-  const idleBusy = !!(action || play || walk || drag !== null || menu || naming || confirmHide || bubble || reminder || transient || typingLook)
+  const idleBusy = !!(action || play || walk || drag !== null || menu || naming || confirmHide || bubble || water.r || summon !== null || transient || typingLook)
   busyRef.current = !canIdle({ mood, busy: idleBusy, boss, hidden: false }) // 是否隐藏在计时器触发时再看
   const stopIdle = () => {
     idleTimers.current.forEach(clearTimeout); idleTimers.current = []
@@ -402,21 +399,22 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
   }
 
   const left = settings.petCorner === 'left'
-  const dx = drag ?? play?.dx ?? walk?.dx ?? 0
-  const goingOut = play ? play.phase !== 'back' : walk ? Math.abs(walk.dx) > 1 : false
-  const facing = play || walk ? (goingOut ? (left ? 1 : -1) : (left ? -1 : 1)) : 1 // 狗狗默认朝右看；跑动时朝跑的方向
+  const dx = drag ?? play?.dx ?? walk?.dx ?? summon ?? 0
+  const goingOut = play ? play.phase !== 'back' : walk ? Math.abs(walk.dx) > 1 : summon !== null ? Math.abs(summon) > 1 && rollPhase === 'call' : false
+  const moving = play || walk || (summon !== null && (rollPhase === 'call' || rollPhase === null))
+  const facing = moving ? (goingOut ? (left ? 1 : -1) : (left ? -1 : 1)) : 1 // 狗狗默认朝右看；跑动时朝跑的方向
   return (
     <>
-      <div ref={rootRef} className={`pet ${left ? 'left' : 'right'}${drag !== null ? ' dragging' : ''}${play ? ' playing' : ''}${walk ? ' walking' : ''}${typingLook ? ' typing' : ''}`} data-testid="pet"
-        style={{ transform: dx ? `translateX(${dx}px)` : undefined }} data-play={play?.phase ?? ''} data-walk={walk ? (Math.abs(walk.dx) > 1 ? 'out' : 'back') : ''} data-typing={typingLook ? '1' : ''}>
-        {(bubble || reminder) && (
+      <div ref={rootRef} className={`pet ${left ? 'left' : 'right'}${drag !== null ? ' dragging' : ''}${play ? ' playing' : ''}${walk ? ' walking' : ''}${typingLook ? ' typing' : ''}${summon !== null ? ' summoned' : ''}`} data-testid="pet"
+        style={{ transform: dx ? `translateX(${dx}px)` : undefined }} data-play={play?.phase ?? ''} data-walk={walk ? (Math.abs(walk.dx) > 1 ? 'out' : 'back') : ''} data-typing={typingLook ? '1' : ''} data-roll={rollPhase ?? ''}>
+        {(bubble || reminder) && !rollPhase && ( /* 卷便签期间不冒气泡：窗口矮时气泡会露到卷帘上面 */
           <div className="petbubble" role="status" data-testid="pet-bubble" onClick={() => !reminder && setBubble('')}>
             {reminder ? (
               <div data-testid="pet-reminder">
                 <div>{pet.name}提醒你：{WATER_LINE[reminder]}</div>
                 <div className="petbtns">
-                  <button className="btn" onClick={() => void answerReminder(false)} data-testid="reminder-done">好了</button>
-                  <button className="btn" onClick={() => void answerReminder(true)} data-testid="reminder-snooze">10 分钟后</button>
+                  <button className="btn" onClick={() => water.answer(false)} data-testid="reminder-done">好了</button>
+                  <button className="btn" onClick={() => water.answer(true)} data-testid="reminder-snooze">10 分钟后</button>
                 </div>
               </div>
             ) : bubble}
@@ -427,7 +425,7 @@ export function PetCorner({ settings, boss = false, onHide }: { settings: Settin
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { pointer.current = null; setDrag(null) }}
           onMouseEnter={onEnterDog} onMouseLeave={onLeaveDog}>
           <span className="petface" style={{ transform: facing < 0 ? 'scaleX(-1)' : undefined }}>
-            <Dog mood={mood} accessory={accessory} glasses={pet.glasses} effect={effect} action={action} look={typingLook ?? look} />
+            <Dog mood={mood} accessory={accessory} glasses={pet.glasses} effect={effect} action={action ?? (reminder === 'water' ? 'water' : null)} look={typingLook ?? look} />
           </span>
         </button>
       </div>

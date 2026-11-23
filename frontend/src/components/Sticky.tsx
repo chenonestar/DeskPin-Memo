@@ -15,6 +15,7 @@ import { formatDue } from '../format'
 import { FunBar } from './FunBar'
 import { NewsList } from './NewsList'
 import { PetCorner } from './Pet'
+import { useWaterReminder, WaterShade } from './WaterShade'
 
 type View =
   | { kind: 'group'; id: string }
@@ -352,6 +353,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
     '--faded-opacity': String(settings.fadedOpacity || 0.4),
   } as React.CSSProperties
   const showPet = settings.petEnabled && !boss && !petHidden
+  const water = useWaterReminder({ settings, boss, collapsed, active: showPet })
   const modeIcon = win?.mode === 'top' ? 'top' : win?.mode === 'normal' ? 'window' : 'pin'
   const native = !!win?.nativeOpacity
   const faded = !native && settings.fadeOnLeave && !win?.clickThrough && !hovered // 原生模式下的变淡由外壳处理
@@ -436,7 +438,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
               </ul>
             )}
           </div>
-          {showPet && <PetCorner settings={settings} boss={boss} onHide={() => setPetHidden(true)} />}
+          {showPet && <PetCorner settings={settings} boss={boss} onHide={() => setPetHidden(true)} water={water} />}
           </div>
 
           {snack && (
@@ -463,6 +465,7 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
             </div>
           )}
           {!boss && <FunBar settings={settings} onOpenNews={() => setView({ kind: 'news' })} />}
+          {water.r?.mode === 'roll' && <WaterShade r={water.r} settings={settings} onAnswer={water.answer} />}
           {!win?.locked && <div className="grip" onMouseDown={(e) => { e.preventDefault(); void api.beginResize() }} aria-hidden="true" />}
         </>
       )}

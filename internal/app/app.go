@@ -32,6 +32,7 @@ type App struct {
 	quick       *quickSaved   // 快速输入框 / 设置窗口打开期间保存的便签窗口状态
 	overlay     string        // "quick" | "settings" | ""
 	alerts      int           // 尚未处理的强提醒数量（期间需要鼠标交互，暂停鼠标穿透）
+	petAlert    bool          // 狗狗卷起便签提醒喝水 / 起身期间：同样需要点按钮，暂停鼠标穿透、不透明
 	lastOpacity OpacityResult // 最近一次记入日志的实际透明度（变化时才记）
 	faded       bool          // 鼠标是否不在便签上（「鼠标离开后自动变淡」）；启动时假定鼠标不在
 	boss        bool          // 正经模式（老板键）：收起新闻条、宠物、倒计时
@@ -288,7 +289,7 @@ func (a *App) opacityInput(base float64) OpacityInput {
 		ct = w.ClickThrough
 	}
 	return OpacityInput{Base: base, FadeEnabled: st.FadeOnLeave, FadedLevel: st.FadedOpacity, ClickThrough: ct,
-		MouseAway: a.faded, Overlay: a.quick != nil, Alert: a.alerts > 0}
+		MouseAway: a.faded, Overlay: a.quick != nil, Alert: a.alerts > 0 || a.petAlert}
 }
 
 // SetFaded 前端在鼠标进入 / 离开便签时调用（仅 NativeOpacity 时）。
@@ -318,7 +319,7 @@ func (a *App) applyClickThrough() {
 	if err != nil {
 		return
 	}
-	a.shell.SetClickThrough(w.ClickThrough && a.quick == nil && a.alerts == 0)
+	a.shell.SetClickThrough(w.ClickThrough && a.quick == nil && a.alerts == 0 && !a.petAlert)
 }
 
 // SetClickThrough 开启 / 关闭鼠标穿透（FR-208）并保存。

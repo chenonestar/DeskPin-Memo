@@ -6,9 +6,10 @@ const patchSettings = async (page: Page, patch: Record<string, unknown>) => {
   return rpc(page, 'SaveSettings', { ...s, ...patch })
 }
 const devShell = async (page: Page) => (await page.request.get('/__dev/shell')).json() as Promise<{ opened: string }>
+// 发布时间取最近几小时（越靠后越新）：写死日期的话，过了保留期（7 天）会在刷新时被清理掉
 const rss = (title: string, items: string[]) =>
   `<?xml version="1.0" encoding="UTF-8"?><rss><channel><title>${title}</title>` +
-  items.map((t, i) => `<item><title>${t}</title><link>https://example.com/${encodeURIComponent(t)}</link><guid>${t}</guid><pubDate>Sun, 15 Nov 2026 0${i}:00:00 +0800</pubDate></item>`).join('') +
+  items.map((t, i) => `<item><title>${t}</title><link>https://example.com/${encodeURIComponent(t)}</link><guid>${t}</guid><pubDate>${new Date(Date.now() - (10 - i) * 3600_000).toUTCString()}</pubDate></item>`).join('') +
   `</channel></rss>`
 
 async function cleanupFun(page: Page) {
@@ -92,7 +93,7 @@ test.describe('摸鱼：戴眼镜的狗狗', () => {
   test.afterEach(async ({ page }) => {
     await devPost(page, { idle: 0 })
     await cleanupFun(page)
-    await patchSettings(page, { petWater: false, petWaterNotify: false, petHoliday: true, petCorner: 'right' })
+    await patchSettings(page, { petWater: false, petWaterNotify: false, petWaterStyle: 'roll', petHoliday: true, petCorner: 'right' })
     await rpc(page, 'ResetPet'); await rpc(page, 'RenamePet', '博士')
   })
 
@@ -197,7 +198,7 @@ test.describe('摸鱼：戴眼镜的狗狗', () => {
   test('喝水提醒（含系统通知）、上班问候、节日装扮', async ({ page }) => {
     await page.clock.setFixedTime(new Date(2026, 11, 21, 10, 0)) // 星期一 10:00，离圣诞还有几天
     await freshGroup(page)
-    await enablePet(page, true, { petWater: true, petWaterInterval: 45, petWaterNotify: true, workStart: '09:00', workEnd: '18:00' })
+    await enablePet(page, true, { petWater: true, petWaterInterval: 45, petWaterNotify: true, petWaterStyle: 'bubble', workStart: '09:00', workEnd: '18:00' })
     const rem = page.getByTestId('pet-reminder')
     await expect(rem).toContainText('博士提醒你：喝口水吧')
     await expect.poll(async () => ((await page.request.get('/__dev/shell')).json() as Promise<{ notified: string }>).then((x) => x.notified)).toContain('喝口水吧')
@@ -205,6 +206,7 @@ test.describe('摸鱼：戴眼镜的狗狗', () => {
     await page.getByTestId('reminder-done').click()
     await expect(rem).toHaveCount(0)
     await expect.poll(async () => (await rpc<{ waterToday: number }>(page, 'GetPet')).waterToday).toBe(1)
+    await expect(page.getByTestId('roll-shade')).toHaveCount(0) // 气泡方式不卷便签
 
     // 节日：圣诞期间戴圣诞帽；关闭后恢复
     await page.clock.setFixedTime(new Date(2026, 11, 24, 9, 10))
@@ -228,10 +230,128 @@ test.describe('摸鱼：戴眼镜的狗狗', () => {
     await expect(page.getByLabel('节日自动装扮（春节、端午、中秋等）')).toBeChecked()
     await page.getByLabel('喝水 / 起身提醒').check()
     await expect(page.getByLabel('提醒间隔')).toHaveValue('45')
+    await expect(page.getByLabel('提醒方式')).toHaveValue('roll')
     await expect(page.getByLabel('同时弹系统通知（便签被挡住时也能看到）')).not.toBeChecked()
     await expect(rpc(page, 'SetPetLook', 'crown', 'round')).rejects.toThrow(/解锁/)
     await page.getByTestId('settings-close').click()
     await expect(page.getByTestId('pet-dog')).toBeVisible()
+  })
+})
+
+type Shell = { clickThrough: boolean; opacity: number; notified: string }
+const shellState = async (page: Page) => (await page.request.get('/__dev/shell')).json() as Promise<Shell>
+const MON = new Date(2026, 10, 16, 10, 0) // 星期一 10:00：上班一小时，喝水提醒（45 分钟）已到点
+
+test.describe('摸鱼：狗狗卷起便签提醒喝水 / 起身', () => {
+  test.afterEach(async ({ page }) => {
+    if (await rpc<boolean>(page, 'BossMode')) await rpc(page, 'ToggleBossMode')
+    await rpc(page, 'SetClickThrough', false)
+    await cleanupFun(page)
+    await patchSettings(page, { petWater: false, petWaterNotify: false, petWaterStyle: 'roll', petActivity: 'normal', petWorry: true })
+  })
+  const water = { petWater: true, petWaterInterval: 45, petWaterStyle: 'roll', workStart: '09:00', workEnd: '18:00', petActivity: 'quiet', petWorry: false }
+  const rollTo = async (page: Page, phase: string) => {
+    const shade = page.getByTestId('roll-shade')
+    for (let i = 0; i < 10 && (await shade.getAttribute('data-phase')) !== phase; i++) await page.clock.runFor(500)
+    await expect(shade).toHaveAttribute('data-phase', phase)
+  }
+
+  test('到点卷起：列表被挡住、穿透暂停；点「喝好了」喝水后展开，杯数 +1，穿透恢复', async ({ page }) => {
+    await page.clock.install({ time: MON })
+    const g = await freshGroup(page)
+    await rpc(page, 'CreateItem', { title: '被卷起来的事项', groupId: g.id })
+    await rpc(page, 'SetClickThrough', true)
+    await rpc(page, 'SetWindowOpacity', 0.6)
+    await enablePet(page, true, water)
+    const shade = page.getByTestId('roll-shade')
+    await expect(shade).toHaveAttribute('data-phase', 'call') // 先跑到中间
+    await expect(page.getByTestId('pet')).toHaveAttribute('data-roll', 'call')
+    await rollTo(page, 'rolling')
+    await expect(page.getByTestId('pet')).toHaveAttribute('data-roll', 'rolling') // 跳起来拽纸边
+    await rollTo(page, 'rolled')
+    await expect(shade).toContainText('博士提醒你：喝口水吧')
+    await expect(shade).toContainText('今天已经喝了 0 杯')
+    await expect.poll(async () => shellState(page)).toMatchObject({ clickThrough: false, opacity: 1 }) // 要能点按钮、看得清
+    // 事项被卷走了：点它所在的位置点到的是卷帘
+    const covered = await page.evaluate(() => {
+      const r = document.querySelector('[data-testid=item-row]')!.getBoundingClientRect()
+      return !!document.elementFromPoint(r.left + 30, r.top + r.height / 2)?.closest('[data-testid=roll-shade]')
+    })
+    expect(covered).toBe(true)
+    await expect(page.getByTestId('titlebar')).toBeVisible() // 标题栏还在
+
+    await page.getByTestId('roll-done').click()
+    await expect(shade).toHaveAttribute('data-phase', 'finish')
+    await expect(page.getByTestId('roll-finish')).toContainText('今天第 1 杯')
+    await rollTo(page, 'unrolling')
+    await page.clock.runFor(1300)
+    await expect(shade).toHaveCount(0)
+    await expect(page.getByTestId('pet-bubble')).toContainText('咕嘟咕嘟')
+    expect((await rpc<{ waterToday: number }>(page, 'GetPet')).waterToday).toBe(1)
+    await expect.poll(async () => shellState(page)).toMatchObject({ clickThrough: true, opacity: 0.6 })
+  })
+
+  test('正在打字先等你停手；「10 分钟后」再来（换成起身）；强提醒和正经模式立即展开', async ({ page }) => {
+    await page.clock.install({ time: MON })
+    const g = await freshGroup(page)
+    const it = await rpc<{ id: string }>(page, 'CreateItem', { title: '卷帘与强提醒', groupId: g.id })
+    await enablePet(page, true, { ...water, petWater: false })
+    await expect(page.getByTestId('pet-dog')).toBeVisible()
+    const shade = page.getByTestId('roll-shade')
+    await page.getByTestId('add-input').click()
+    await page.keyboard.type('abc')
+    await patchSettings(page, { petWater: true })
+    await expect(page.getByTestId('pet-bubble')).toContainText('等你忙完')
+    await page.clock.runFor(5000)
+    await expect(shade).toHaveCount(0)
+    await page.clock.runFor(5200) // 停手 10 秒
+    await expect(shade).toHaveAttribute('data-phase', 'call')
+    await expect(page.getByTestId('add-input')).not.toBeFocused()
+    await expect(page.getByTestId('add-input')).toHaveValue('abc') // 没打完的字还在
+    await rollTo(page, 'rolled')
+    await page.getByTestId('roll-snooze').click()
+    await expect(shade).toHaveAttribute('data-phase', 'unrolling') // 不喝水，直接拉下来
+    await page.clock.runFor(1300)
+    await expect(shade).toHaveCount(0)
+    await expect(page.getByTestId('pet-bubble')).toContainText('10 分钟后再来')
+    expect((await rpc<{ waterToday: number }>(page, 'GetPet')).waterToday).toBe(0)
+
+    await page.clock.runFor(9 * 60_000)
+    await expect(shade).toHaveCount(0)
+    await page.clock.runFor(90_000)
+    await expect(shade).toHaveAttribute('data-kind', 'stand') // 喝水和起身交替
+    await rollTo(page, 'rolled')
+    await expect(shade).toContainText('起来走走')
+    await expect(page.getByTestId('roll-done')).toHaveText('活动好了')
+
+    // 强提醒：立即展开，先处理事项；这次按「10 分钟后」算
+    await rpc(page, 'ShowStrongAlert', { tag: 't', title: '卷帘与强提醒', body: '', itemId: it.id, strong: true, summary: false, missed: false,
+      actions: [{ id: 'snooze10', label: '10 分钟后' }] })
+    await expect(shade).toHaveCount(0)
+    const alert = page.getByTestId('strong-alert')
+    await alert.getByRole('button', { name: '10 分钟后' }).click()
+    await expect(alert).toHaveCount(0)
+    await page.clock.runFor(10.5 * 60_000)
+    await expect(shade).toHaveAttribute('data-kind', 'water')
+
+    // 正经模式：立即收起
+    await rollTo(page, 'rolled')
+    expect(await rpc<boolean>(page, 'ToggleBossMode')).toBe(true)
+    await expect(shade).toHaveCount(0)
+    await expect(page.getByTestId('pet')).toHaveCount(0)
+  })
+
+  test('便签折叠成一行时只发系统通知，不卷', async ({ page }) => {
+    await page.clock.install({ time: MON })
+    await freshGroup(page)
+    await rpc(page, 'ToggleCollapse')
+    await page.reload()
+    await devPost(page, { notified: '' })
+    await enablePet(page, true, { ...water, petWaterNotify: true })
+    await expect.poll(async () => (await shellState(page)).notified).toContain('喝口水吧')
+    await page.clock.runFor(3000)
+    await expect(page.getByTestId('roll-shade')).toHaveCount(0)
+    await rpc(page, 'ToggleCollapse')
   })
 })
 

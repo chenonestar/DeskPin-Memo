@@ -318,3 +318,49 @@ export const BELLY_HOVER_MS = 3000
 export const BELLY_MAX_MS = 6000
 /** 停止打字多久后不再盯着输入框（毫秒）。 */
 export const TYPING_LINGER_MS = 2000
+
+// ---------------------------------------------------------------- 卷起便签（喝水 / 起身提醒）
+
+/** 卷帘的几个阶段：跑到中间 → 卷起 → 卷着等你点 →（喝水 / 伸懒腰）→ 展开。 */
+export type RollPhase = 'call' | 'rolling' | 'rolled' | 'finish' | 'unrolling'
+/** 各阶段时长（毫秒）；rolled 一直等你点按钮。 */
+export const ROLL_MS: Record<Exclude<RollPhase, 'rolled'>, number> = { call: 600, rolling: 1400, finish: 1000, unrolling: 1200 }
+/** 最近这么久内打过字就先不卷（毫秒）。 */
+export const ROLL_WAIT_TYPING_MS = 10_000
+
+/** 下一个阶段；rolled 要等你回答（done = 喝好了 / 活动好了，snooze = 10 分钟后）；null 表示结束。 */
+export function nextRollPhase(p: RollPhase, answer?: 'done' | 'snooze'): RollPhase | null {
+  switch (p) {
+    case 'call': return 'rolling'
+    case 'rolling': return 'rolled'
+    case 'rolled': return answer === 'done' ? 'finish' : answer === 'snooze' ? 'unrolling' : 'rolled'
+    case 'finish': return 'unrolling'
+    case 'unrolling': return null
+  }
+}
+
+export interface ReminderStartInput {
+  style: string // roll | bubble
+  collapsed: boolean // 便签折叠成一行
+  typedAgoMs: number | null // 距上次在便签里打字（null = 没打过）
+  dialogOpen: boolean // 对话框开着
+  editingRow: boolean // 正在改某条事项 / 子任务
+  waitedMs: number // 已经因为你在忙等了多久
+}
+
+/** 对话框 / 编辑一直开着时最多等这么久，之后改为只冒气泡（不挡住你正在做的事）。 */
+export const ROLL_WAIT_MAX_MS = 2 * 60_000
+
+/**
+ * 提醒到点时怎么开始：notify = 便签折叠着，只发系统通知；bubble = 只冒气泡；
+ * wait = 你正忙（打字 / 编辑 / 对话框），等会儿再卷；roll = 卷起便签。
+ */
+export function reminderStart(i: ReminderStartInput): 'notify' | 'bubble' | 'wait' | 'roll' {
+  if (i.collapsed) return 'notify'
+  if (i.style === 'bubble') return 'bubble'
+  if (i.dialogOpen || i.editingRow || (i.typedAgoMs != null && i.typedAgoMs < ROLL_WAIT_TYPING_MS)) return i.waitedMs >= ROLL_WAIT_MAX_MS ? 'bubble' : 'wait'
+  return 'roll'
+}
+
+/** 「10 分钟后」：把上次提醒时间往前推，使 10 分钟后正好到期。 */
+export const snoozeLast = (now: number, intervalMin: number) => now - intervalMin * 60_000 + 10 * 60_000

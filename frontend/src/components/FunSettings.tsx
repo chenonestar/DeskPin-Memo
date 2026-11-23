@@ -204,8 +204,12 @@ function PetSection({ s, patch }: P) {
                 <select id="pwi" value={s.petWaterInterval} onChange={(e) => void patch({ petWaterInterval: Number(e.target.value) })}>
                   {[30, 45, 60, 90].map((n) => <option key={n} value={n}>每 {n} 分钟</option>)}
                 </select></div>
+              <div className="rowline"><label htmlFor="pws">提醒方式</label>
+                <select id="pws" value={s.petWaterStyle} onChange={(e) => void patch({ petWaterStyle: e.target.value as S['petWaterStyle'] })} data-testid="pet-water-style">
+                  <option value="roll">卷起便签（确认后再展开）</option><option value="bubble">只冒气泡</option>
+                </select></div>
               <Check label="同时弹系统通知（便签被挡住时也能看到）" checked={s.petWaterNotify} onChange={(v) => void patch({ petWaterNotify: v })} />
-              <div className="hint">喝水和起身交替提醒，只在工作日的上班时间（{s.workStart}–{s.workEnd}）；免打扰时段、正经模式、离开电脑超过 5 分钟时不提醒。今天喝了 {pet.waterToday} 杯。</div>
+              <div className="hint">喝水和起身交替提醒，只在工作日的上班时间（{s.workStart}–{s.workEnd}）；免打扰时段、正经模式、离开电脑超过 5 分钟时不提醒。卷起便签时如果你正在打字，会等你停手 10 秒；便签折叠成一行时只发系统通知。今天喝了 {pet.waterToday} 杯。</div>
             </>
           )}
           <div className="rowline"><button className="btn" onClick={() => setReset(true)}>重置成长进度…</button></div>

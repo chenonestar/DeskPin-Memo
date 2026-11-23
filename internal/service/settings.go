@@ -48,6 +48,8 @@ type Settings struct {
 	PetWater         bool `json:"petWater"`
 	PetWaterInterval int  `json:"petWaterInterval"` // 分钟：30 | 45 | 60 | 90
 	PetWaterNotify   bool `json:"petWaterNotify"`
+	// PetWaterStyle 提醒方式：roll（狗狗卷起便签，默认）| bubble（只冒气泡）
+	PetWaterStyle string `json:"petWaterStyle"`
 	// 摸鱼：下班倒计时 / 今天已赚
 	ShowCountdown  bool    `json:"showCountdown"`
 	WorkStart      string  `json:"workStart"` // HH:MM
@@ -78,6 +80,7 @@ func DefaultSettings() Settings {
 		PetHoliday:         true,
 		PetActivity:        "normal",
 		PetWaterInterval:   45,
+		PetWaterStyle:      "roll",
 		WorkStart:          "09:00",
 		WorkEnd:            "18:00",
 		CountdownMoney:     "hover",
@@ -137,6 +140,9 @@ func (s Settings) normalized() Settings {
 	}
 	if s.PetWaterInterval != 30 && s.PetWaterInterval != 45 && s.PetWaterInterval != 60 && s.PetWaterInterval != 90 {
 		s.PetWaterInterval = d.PetWaterInterval
+	}
+	if s.PetWaterStyle != "bubble" {
+		s.PetWaterStyle = "roll"
 	}
 	if s.PetActivity != "quiet" && s.PetActivity != "lively" {
 		s.PetActivity = "normal"
