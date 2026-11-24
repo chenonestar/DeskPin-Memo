@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"log"
 
 	"deskpinmemo/internal/service"
 	"deskpinmemo/internal/store"
@@ -68,6 +69,41 @@ func (a *App) SetPetAlert(on bool) {
 	a.applyEffects()
 }
 
+// petLogText 是前端可以写进日志的固定事件（喝水 / 起身提醒的每一步），只记这些固定的话，不记任何内容。
+var petLogText = map[string]string{
+	"water.roll":           "卷起便签",
+	"water.bubble":         "冒气泡提醒",
+	"water.bubble.timeout": "气泡两分钟没理会，已收起",
+	"water.notify":         "便签折叠着，只发系统通知",
+	"water.wait":           "到点了，你正在忙，等你停手",
+	"water.done":           "已确认（喝好了 / 活动好了）",
+	"water.snooze":         "10 分钟后再提醒",
+	"water.cut.strong":     "被事项强提醒打断，10 分钟后再提醒",
+	"water.cut.boss":       "被正经模式打断，10 分钟后再提醒",
+	"water.cut.off":        "狗狗被关掉或收起，10 分钟后再提醒",
+	"water.cut.away":       "便签切到了设置等界面，10 分钟后再提醒",
+	"water.skip.away":      "到点了，但离开电脑超过 5 分钟，暂不提醒",
+	"water.skip.dnd":       "到点了，但在免打扰时段，暂不提醒",
+	"water.skip.boss":      "到点了，但在正经模式，暂不提醒",
+	"water.skip.hidden":    "到点了，但狗狗被暂时收起，暂不提醒",
+}
+
+// PetLog 前端记一条喝水 / 起身提醒的日志；code 必须是 petLogText 里的固定事件，kind 为 water / stand。
+func (a *App) PetLog(code, kind string) {
+	text, ok := petLogText[code]
+	if !ok {
+		return
+	}
+	switch kind {
+	case "water":
+		log.Printf("喝水 / 起身提醒（喝水）：%s", text)
+	case "stand":
+		log.Printf("喝水 / 起身提醒（起身）：%s", text)
+	default:
+		log.Printf("喝水 / 起身提醒：%s", text)
+	}
+}
+
 // TestNotification 发一条测试通知（设置 → 摸鱼「发送测试通知」），用来确认这台电脑能否弹出系统通知。
 // 返回 nil 只表示已交给 Windows；是否真的弹出取决于系统的通知设置。发送记录写在日志里。
 func (a *App) TestNotification() error {
@@ -115,6 +151,11 @@ func (a *App) SetBossMode(on bool) (bool, error) {
 		}
 	}
 	a.boss = on
+	if on {
+		log.Print("正经模式：开启")
+	} else {
+		log.Print("正经模式：关闭")
+	}
 	a.Emit("boss:changed", on)
 	return on, nil
 }

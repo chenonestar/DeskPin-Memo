@@ -288,8 +288,10 @@ func (a *App) opacityInput(base float64) OpacityInput {
 	if w, err := a.svc.GetWindow(a.groupID); err == nil {
 		ct = w.ClickThrough
 	}
+	// 狗狗卷便签期间：默认恢复不透明；设置了「卷起时保持便签的透明度」则保持，但不自动变淡（免得淡到看不清提醒）
+	away := a.faded && !a.petAlert
 	return OpacityInput{Base: base, FadeEnabled: st.FadeOnLeave, FadedLevel: st.FadedOpacity, ClickThrough: ct,
-		MouseAway: a.faded, Overlay: a.quick != nil, Alert: a.alerts > 0 || a.petAlert}
+		MouseAway: away, Overlay: a.quick != nil, Alert: a.alerts > 0 || (a.petAlert && !st.PetRollKeepOpacity)}
 }
 
 // SetFaded 前端在鼠标进入 / 离开便签时调用（仅 NativeOpacity 时）。

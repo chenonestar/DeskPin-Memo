@@ -44,6 +44,7 @@ type Shell struct {
 	ctState       map[windows.HWND]exBits // 仅在 applyStylesOnce 内访问（单飞，无需加锁）：我们加上的样式位
 	interactive   bool                    // 同上：穿透开启但按住 Ctrl 临时恢复交互
 	lastAlpha     int                     // 同上：最近一次记入日志的透明度 / 扩展样式（变化时才记）
+	lastCT        bool                    // 最近一次记入日志的「穿透功能是否开启」
 	lastEx        uintptr
 	OnInteractive func(bool) // 按住 Ctrl 临时恢复交互 / 松开时回调（前端据此显示状态）
 }
@@ -744,10 +745,11 @@ func (s *Shell) applyStylesOnce() {
 		}
 	}
 	exNow := getWindowLong(root, gwlExStyle)
-	if on != s.lastOn.Load() || interactive != s.interactive || int(alpha) != s.lastAlpha || exNow != s.lastEx {
+	// 只在穿透功能开关、透明度变化或系统拒绝修改样式时记日志；按住 Ctrl 临时操作很频繁，不记
+	if ct != s.lastCT || int(alpha) != s.lastAlpha || failed > 0 {
 		log.Printf("窗口样式：鼠标穿透=%v（功能开启=%v，Ctrl=%v），样式已修改 %d、被系统拒绝 %d，根窗口扩展样式=%#x，透明度=%d",
 			on, ct, ctrl, changed, failed, exNow, alpha)
-		s.lastAlpha, s.lastEx = int(alpha), exNow
+		s.lastAlpha, s.lastEx, s.lastCT = int(alpha), exNow, ct
 	}
 	s.lastOn.Store(on)
 	if interactive != s.interactive {

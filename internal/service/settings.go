@@ -50,12 +50,16 @@ type Settings struct {
 	PetWaterNotify   bool `json:"petWaterNotify"`
 	// PetWaterStyle 提醒方式：roll（狗狗卷起便签，默认）| bubble（只冒气泡）
 	PetWaterStyle string `json:"petWaterStyle"`
+	// PetRollKeepOpacity 卷起便签时保持便签的透明度（默认 false：卷起期间恢复不透明）
+	PetRollKeepOpacity bool `json:"petRollKeepOpacity"`
 	// 摸鱼：下班倒计时 / 今天已赚
 	ShowCountdown  bool    `json:"showCountdown"`
 	WorkStart      string  `json:"workStart"` // HH:MM
 	WorkEnd        string  `json:"workEnd"`   // HH:MM（狗狗到点伸懒腰也用它）
 	MonthlySalary  float64 `json:"monthlySalary"`
 	CountdownMoney string  `json:"countdownMoney"` // 「今天已赚」的显示方式：hover（悬停才显示，默认）| always | never
+	// CountdownToss 狗狗把过去的时间扔掉：hour（每小时，默认）| half（每 30 分钟）| off
+	CountdownToss string `json:"countdownToss"`
 	// 摸鱼：正经模式（老板键）——一键收起新闻条、宠物、倒计时，可同时切到指定分组
 	HotkeyBoss  string `json:"hotkeyBoss"`
 	BossGroupID string `json:"bossGroupId"`
@@ -84,6 +88,7 @@ func DefaultSettings() Settings {
 		WorkStart:          "09:00",
 		WorkEnd:            "18:00",
 		CountdownMoney:     "hover",
+		CountdownToss:      "hour",
 		HotkeyBoss:         "Ctrl+Alt+H",
 	}
 }
@@ -140,6 +145,9 @@ func (s Settings) normalized() Settings {
 	}
 	if s.PetWaterInterval != 30 && s.PetWaterInterval != 45 && s.PetWaterInterval != 60 && s.PetWaterInterval != 90 {
 		s.PetWaterInterval = d.PetWaterInterval
+	}
+	if s.CountdownToss != "half" && s.CountdownToss != "off" {
+		s.CountdownToss = "hour"
 	}
 	if s.PetWaterStyle != "bubble" {
 		s.PetWaterStyle = "roll"

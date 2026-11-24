@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, on } from '../api'
 import type { NewsItem, Settings } from '../types'
-import { ago, countdown, countdownText, TWO_ROW_WIDTH } from '../fun'
+import { ago, countdown, countdownText, tossEvent, TWO_ROW_WIDTH } from '../fun'
 
 /** 便签底部的一行：下班倒计时 + 新闻轮播。 */
 export function FunBar({ settings, onOpenNews }: { settings: Settings; onOpenNews: () => void }) {
@@ -36,6 +36,13 @@ function CountdownChip({ settings }: { settings: Settings }) {
     const id = window.setInterval(() => { if (!document.hidden) setNow(new Date()) }, expanded ? 1000 : 15_000)
     return () => clearInterval(id)
   }, [expanded])
+  // 跨过整点 / 半点：通知狗狗把过去的时间扔掉（狗狗没开时没人接，倒计时照常走）
+  const prev = useRef(now)
+  useEffect(() => {
+    const t = tossEvent(prev.current, now, settings.workStart, settings.workEnd, settings.countdownToss ?? 'hour')
+    prev.current = now
+    if (t) window.dispatchEvent(new CustomEvent('deskpin:countdown-toss', { detail: t }))
+  }, [now, settings.workStart, settings.workEnd, settings.countdownToss])
   const c = countdown(now, settings.workStart, settings.workEnd)
   return (
     <span className={`cdchip ${expanded ? 'open' : ''}`} data-testid="countdown" title={`上班 ${settings.workStart} · 下班 ${settings.workEnd}`}

@@ -26,7 +26,11 @@ export function FunPane({ s, patch, groups, onSettings }: P & { groups: Group[];
         <select id="cm" value={s.countdownMoney} onChange={(e) => void patch({ countdownMoney: e.target.value as S['countdownMoney'] })}>
           <option value="hover">鼠标悬停时显示</option><option value="always">一直显示</option><option value="never">不显示</option>
         </select></div>
-      <div className="hint">平时只显示到分钟（如「下班 2:13 · ¥ ••」），鼠标放上去展开秒数和金额。填了月薪才有「今天已赚」（按每月 21.75 个计薪日折算），只保存在本机。狗狗到下班时间会伸懒腰。周末不倒计时。便签较窄时，倒计时和新闻自动分成两行。</div>
+      <div className="rowline"><label htmlFor="ctoss">狗狗扔掉过去的时间</label>
+        <select id="ctoss" value={s.countdownToss} onChange={(e) => void patch({ countdownToss: e.target.value as S['countdownToss'] })} data-testid="countdown-toss">
+          <option value="hour">每小时</option><option value="half">每 30 分钟</option><option value="off">关闭</option>
+        </select></div>
+      <div className="hint">平时只显示到分钟（如「下班 2:13 · ¥ ••」），鼠标放上去展开秒数和金额。填了月薪才有「今天已赚」（按每月 21.75 个计薪日折算），只保存在本机。狗狗到下班时间会伸懒腰；上班时间里每过一小时（或 30 分钟），狗狗会把过去的时间从倒计时里叼出来扔掉（需要同时开着狗狗）。周末不倒计时。便签较窄时，倒计时和新闻自动分成两行。</div>
       <h4>正经模式（老板键）</h4>
       <div className="rowline"><label htmlFor="bossg">同时切换到分组</label>
         <select id="bossg" value={s.bossGroupId} onChange={(e) => void patch({ bossGroupId: e.target.value })}>
@@ -208,6 +212,7 @@ function PetSection({ s, patch }: P) {
                 <select id="pws" value={s.petWaterStyle} onChange={(e) => void patch({ petWaterStyle: e.target.value as S['petWaterStyle'] })} data-testid="pet-water-style">
                   <option value="roll">卷起便签（确认后再展开）</option><option value="bubble">只冒气泡</option>
                 </select></div>
+              {s.petWaterStyle === 'roll' && <Check label="卷起时保持便签的透明度（默认卷起期间不透明）" checked={s.petRollKeepOpacity} onChange={(v) => void patch({ petRollKeepOpacity: v })} />}
               <Check label="同时弹系统通知（便签被挡住时也能看到）" checked={s.petWaterNotify} onChange={(v) => void patch({ petWaterNotify: v })} />
               <div className="hint">喝水和起身交替提醒，只在工作日的上班时间（{s.workStart}–{s.workEnd}）；免打扰时段、正经模式、离开电脑超过 5 分钟时不提醒。卷起便签时如果你正在打字，会等你停手 10 秒；便签折叠成一行时只发系统通知。今天喝了 {pet.waterToday} 杯。</div>
             </>

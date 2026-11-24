@@ -180,6 +180,7 @@ export const api = {
   drinkWater: () => call<Pet>('DrinkWater'),
   petNotify: (text: string) => call<void>('PetNotify', text),
   setPetAlert: (on: boolean) => call<void>('SetPetAlert', on),
+  petLog: (code: string, kind = '') => call<void>('PetLog', code, kind),
   testNotification: () => call<void>('TestNotification'),
   setPetLook: (acc: string, glasses: string) => call<Pet>('SetPetLook', acc, glasses),
   idleSeconds: () => call<number>('IdleSeconds'),

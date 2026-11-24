@@ -353,10 +353,10 @@ export function Sticky({ groups, settings, win, setWin, reloadGroups, onOpenSett
     '--faded-opacity': String(settings.fadedOpacity || 0.4),
   } as React.CSSProperties
   const showPet = settings.petEnabled && !boss && !petHidden
-  const water = useWaterReminder({ settings, boss, collapsed, active: showPet })
+  const water = useWaterReminder({ settings, boss, collapsed, hidden: petHidden })
   const modeIcon = win?.mode === 'top' ? 'top' : win?.mode === 'normal' ? 'window' : 'pin'
   const native = !!win?.nativeOpacity
-  const faded = !native && settings.fadeOnLeave && !win?.clickThrough && !hovered // 原生模式下的变淡由外壳处理
+  const faded = !native && settings.fadeOnLeave && !win?.clickThrough && !hovered && water.r?.mode !== 'roll' // 原生模式下的变淡由外壳处理；卷便签期间不变淡
 
   return (
     <div className={`sticky ${faded ? 'faded' : ''}`} style={style} data-testid="sticky"

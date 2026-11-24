@@ -231,6 +231,7 @@ test.describe('摸鱼：戴眼镜的狗狗', () => {
     await page.getByLabel('喝水 / 起身提醒').check()
     await expect(page.getByLabel('提醒间隔')).toHaveValue('45')
     await expect(page.getByLabel('提醒方式')).toHaveValue('roll')
+    await expect(page.getByLabel('卷起时保持便签的透明度（默认卷起期间不透明）')).not.toBeChecked()
     await expect(page.getByLabel('同时弹系统通知（便签被挡住时也能看到）')).not.toBeChecked()
     await expect(rpc(page, 'SetPetLook', 'crown', 'round')).rejects.toThrow(/解锁/)
     await page.getByTestId('settings-close').click()
@@ -339,6 +340,21 @@ test.describe('摸鱼：狗狗卷起便签提醒喝水 / 起身', () => {
     expect(await rpc<boolean>(page, 'ToggleBossMode')).toBe(true)
     await expect(shade).toHaveCount(0)
     await expect(page.getByTestId('pet')).toHaveCount(0)
+  })
+
+  test('可选：卷起时保持便签的透明度（仍暂停穿透）', async ({ page }) => {
+    await page.clock.install({ time: MON })
+    await freshGroup(page)
+    await rpc(page, 'SetClickThrough', true)
+    await rpc(page, 'SetWindowOpacity', 0.6)
+    await enablePet(page, true, { ...water, petRollKeepOpacity: true })
+    await rollTo(page, 'rolled')
+    await expect.poll(async () => shellState(page)).toMatchObject({ clickThrough: false, opacity: 0.6 })
+    await page.getByTestId('roll-snooze').click()
+    await page.clock.runFor(1300)
+    await expect(page.getByTestId('roll-shade')).toHaveCount(0)
+    await expect.poll(async () => shellState(page)).toMatchObject({ clickThrough: true, opacity: 0.6 })
+    await patchSettings(page, { petRollKeepOpacity: false })
   })
 
   test('便签折叠成一行时只发系统通知，不卷', async ({ page }) => {
@@ -463,6 +479,44 @@ test.describe('摸鱼：下班倒计时与正经模式', () => {
     await expect(page.getByRole('button', { name: '正经模式（老板键）' })).toHaveText('Ctrl+Alt+H')
     await page.getByRole('tab', { name: '摸鱼' }).click()
     await expect(page.getByText('新闻条、狗狗、倒计时一键收起')).toBeVisible()
+  })
+
+  test('狗狗把过去的时间扔掉：每小时扔掉旧的小时数字；最后一小时一定说话；关闭后不扔', async ({ page }) => {
+    await page.clock.install({ time: new Date(2026, 10, 16, 14, 59, 40) }) // 星期一，离下班还剩 3:00
+    await freshGroup(page)
+    await enablePet(page, true, { showCountdown: true, monthlySalary: 0, countdownToss: 'hour', petActivity: 'quiet', petWorry: false, workStart: '09:00', workEnd: '18:00' })
+    await expect(page.getByTestId('countdown')).toHaveText('下班 3:00')
+    const bit = page.getByTestId('toss-bit')
+    /** 一秒一秒往前走，直到开始扔（动画只有 1.8 秒，一次走太多会错过）。 */
+    const untilToss = async (maxS: number) => { for (let i = 0; i < maxS && (await bit.count()) === 0; i++) await page.clock.runFor(1000) }
+    await untilToss(60)
+    await expect(bit).toHaveText('3')
+    await expect(page.getByTestId('pet')).toHaveAttribute('data-toss', '1')
+    await expect(page.getByTestId('countdown')).toHaveText('下班 2:59')
+    await page.clock.runFor(2000)
+    await expect(bit).toHaveCount(0)
+    await expect(page.getByTestId('pet')).toHaveAttribute('data-toss', '')
+
+    // 最后一小时：扔掉「1」，一定说话
+    await page.clock.setSystemTime(new Date(2026, 10, 16, 16, 59, 40))
+    await untilToss(60)
+    await expect(bit).toHaveText('1')
+    await page.clock.runFor(2000)
+    await expect(page.getByTestId('pet-bubble')).toContainText('最后一小时')
+
+    // 每 30 分钟：扔一个「30 分」
+    await patchSettings(page, { countdownToss: 'half' })
+    await page.clock.setSystemTime(new Date(2026, 10, 16, 17, 29, 40))
+    await untilToss(80)
+    await expect(bit).toHaveText('30 分')
+    await page.clock.runFor(2000)
+
+    // 关闭：跨过整点也不扔
+    await patchSettings(page, { countdownToss: 'off' })
+    await page.clock.setSystemTime(new Date(2026, 10, 16, 15, 59, 40))
+    await untilToss(60)
+    await expect(bit).toHaveCount(0)
+    await patchSettings(page, { countdownToss: 'hour' })
   })
 
   test('倒计时紧凑显示、金额悬停才显示、窄时自动分两行', async ({ page }) => {

@@ -244,15 +244,25 @@ export interface WaterInput {
 /** 用户离开电脑超过这么久就不提醒（秒）。 */
 export const WATER_AWAY = 5 * 60
 
-/** 是否该提醒喝水 / 起身：只在工作日上班时间；免打扰、正经模式、离开电脑时不提醒。 */
-export function waterDue(i: WaterInput): boolean {
-  if (!i.enabled || i.boss || !isWeekday(i.now) || i.idleSeconds >= WATER_AWAY) return false
-  if (i.dnd.enabled && inDailyRange(i.now, i.dnd.start, i.dnd.end)) return false
-  if (!inDailyRange(i.now, i.workStart, i.workEnd)) return false
+/**
+ * 喝水 / 起身提醒的状态：off = 没开 / 不在工作日上班时间；notyet = 还没到间隔；
+ * boss / dnd / away = 到点了，但在正经模式 / 免打扰时段 / 离开电脑，暂不提醒；due = 该提醒了。
+ */
+export type WaterState = 'off' | 'notyet' | 'boss' | 'dnd' | 'away' | 'due'
+
+export function waterCheck(i: WaterInput): WaterState {
+  if (!i.enabled || !isWeekday(i.now) || !inDailyRange(i.now, i.workStart, i.workEnd)) return 'off'
   const start = new Date(i.now.getFullYear(), i.now.getMonth(), i.now.getDate()).getTime() + minutesOf(i.workStart) * 60_000
   const from = i.lastAt != null && i.lastAt >= start ? i.lastAt : start // 每天从上班时间重新计时
-  return i.now.getTime() - from >= i.intervalMin * 60_000
+  if (i.now.getTime() - from < i.intervalMin * 60_000) return 'notyet'
+  if (i.boss) return 'boss'
+  if (i.dnd.enabled && inDailyRange(i.now, i.dnd.start, i.dnd.end)) return 'dnd'
+  if (i.idleSeconds >= WATER_AWAY) return 'away'
+  return 'due'
 }
+
+/** 是否该提醒喝水 / 起身：只在工作日上班时间；免打扰、正经模式、离开电脑时不提醒。 */
+export const waterDue = (i: WaterInput) => waterCheck(i) === 'due'
 
 export const WATER_LINE = { water: '喝口水吧～', stand: '起来走走、伸个懒腰吧' } as const
 
@@ -364,3 +374,40 @@ export function reminderStart(i: ReminderStartInput): 'notify' | 'bubble' | 'wai
 
 /** 「10 分钟后」：把上次提醒时间往前推，使 10 分钟后正好到期。 */
 export const snoozeLast = (now: number, intervalMin: number) => now - intervalMin * 60_000 + 10 * 60_000
+
+// ---------------------------------------------------------------- 狗狗把过去的时间扔掉
+
+export type TossMode = 'hour' | 'half' | 'off'
+/** 一次「扔时间」：hour = 扔掉旧的小时数字 text；half = 扔一个「30 分」小牌子；last = 进入最后一小时。 */
+export interface Toss { kind: 'hour' | 'half'; text: string; last: boolean }
+
+/** 两次刷新之间隔太久（电脑睡眠 / 窗口隐藏）就不补扔。 */
+export const TOSS_MAX_GAP_MS = 2 * 60_000
+
+/**
+ * 倒计时从 prev 走到 now 时，是否跨过了整点（每小时）或半点（每 30 分钟）。只在上班时间内、
+ * 而且两次刷新间隔不超过 TOSS_MAX_GAP_MS 时才扔；剩余时间按紧凑显示的分钟数（向下取整）算。
+ */
+export function tossEvent(prev: Date, now: Date, workStart: string, workEnd: string, mode: TossMode): Toss | null {
+  if (mode === 'off') return null
+  const gap = now.getTime() - prev.getTime()
+  if (gap <= 0 || gap > TOSS_MAX_GAP_MS) return null
+  const a = countdown(prev, workStart, workEnd)
+  const b = countdown(now, workStart, workEnd)
+  if (a.state !== 'working' || b.state !== 'working') return null
+  const ma = Math.floor(a.remainingMs / 60_000)
+  const mb = Math.floor(b.remainingMs / 60_000)
+  const last = ma >= 60 && mb < 60
+  if (mode === 'hour') {
+    const ha = Math.floor(ma / 60)
+    return ha > Math.floor(mb / 60) ? { kind: 'hour', text: String(ha), last } : null
+  }
+  return Math.floor(ma / 30) > Math.floor(mb / 30) ? { kind: 'half', text: '30 分', last } : null
+}
+
+/** 扔完以后狗狗说的话：最后一小时一定说，其余大约三分之一的次数说。rand ∈ [0,1)。 */
+export function tossLine(t: Toss, rand: number): string | null {
+  if (t.last) return '最后一小时，坚持住！'
+  if (rand >= 1 / 3) return null
+  return t.kind === 'hour' ? '又熬过一小时！' : '又过了半小时～'
+}

@@ -31,6 +31,9 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// timeChangeLog 限制「系统时间变更」日志的频率（自动对时一天会触发几十次）。
+var timeChangeLog = logx.NewEvery(time.Hour)
+
 // windowTitle 是窗口唯一标题，用于在进程内定位 HWND。
 const windowTitle = "DeskPinMemo-Sticky"
 
@@ -179,7 +182,15 @@ func (d *daemon) init(ctx context.Context) {
 		OnBoss:         func() { _, _ = d.app.ToggleBossMode() },
 		BossOn:         d.app.BossMode,
 		OnResume:       func() { log.Print("系统唤醒：重新计算提醒"); d.sched.Kick(); sh.Repin(); d.svc.NewsResume() },
-		OnTimeChange:   func() { log.Print("系统时间变更：重新计算提醒"); d.sched.Kick() },
+		OnTimeChange: func() {
+			// 自动对时会频繁触发：一小时内只记一条，并附上省略的次数
+			if ok, n := timeChangeLog.Allow(time.Now()); ok && n > 0 {
+				log.Printf("系统时间变更：重新计算提醒（过去一小时内另有 %d 次，多为自动对时）", n)
+			} else if ok {
+				log.Print("系统时间变更：重新计算提醒")
+			}
+			d.sched.Kick()
+		},
 		OnTaskbar:      func() { log.Print("资源管理器重启：重新钉在桌面"); sh.Repin() },
 		OnDisplay:      func() { sh.SetBounds(sh.Bounds()) },
 		OnMenu:         d.menu,

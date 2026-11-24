@@ -3,8 +3,8 @@ import { api, on } from '../api'
 import type { Pet as PetT, PetAccessory, PetEvent, PetGlasses, PetStatus, Settings } from '../types'
 import {
   anniversary, BELLY_HOVER_MS, BELLY_MAX_MS, canIdle, dueGreeting, GREETING_LINE, holidayOutfit, IDLE_ACTS, idleInterval, isSneezeCombo,
-  PATROL_MIN_WIDTH, petLine, petMood, pickIdleAct, TALK_INTERVAL_MS, TYPING_LINGER_MS, WATER_LINE,
-  type Activity, type Greeting, type IdleAct, type PetMood,
+  PATROL_MIN_WIDTH, petLine, petMood, pickIdleAct, TALK_INTERVAL_MS, tossLine, TYPING_LINGER_MS, WATER_LINE,
+  type Activity, type Greeting, type IdleAct, type PetMood, type Toss,
 } from '../fun'
 import { Dog, type PetAction, type PetEffect } from './Dog'
 import { Menu, type MenuEntry } from './Menu'
@@ -25,6 +25,27 @@ const DRAG_THRESHOLD = 5
 
 type Play = { phase: 'throw' | 'run' | 'back'; dx: number; ballX: number } | null
 type Walk = { dx: number } | null // 巡逻：沿便签底部走到另一头再走回来
+/** 正在扔的时间：从倒计时的位置（x, y）飞到狗狗嘴里（m），再被甩出便签（e）。 */
+type Tossing = { text: string; x: number; y: number; mx: number; my: number; ax: number; ay: number; ex: number; ey: number; n: number } | null
+
+/** 扔时间的动画时长（毫秒）。 */
+export const TOSS_MS = 1800
+
+/** 倒计时里数字所在的位置（找不到就用整个倒计时的中心）。 */
+function digitRect(hourOnly: boolean): DOMRect | null {
+  const chip = document.querySelector('[data-testid=countdown]')
+  if (!chip) return null
+  const node = chip.firstChild
+  const text = node?.nodeType === Node.TEXT_NODE ? node.textContent ?? '' : ''
+  const m = (hourOnly ? /\d+(?=:)/ : /\d+:\d\d/).exec(text)
+  if (node && m) {
+    const r = document.createRange()
+    r.setStart(node, m.index); r.setEnd(node, m.index + m[0].length)
+    const rect = r.getBoundingClientRect()
+    if (rect.width > 0) return rect
+  }
+  return chip.getBoundingClientRect()
+}
 
 /** 坐在便签角落的狗狗（FR-801~810 与二期互动）。 */
 export function PetCorner({ settings, boss = false, onHide, water }: { settings: Settings; boss?: boolean; onHide: () => void; water: WaterCtl }) {
@@ -36,6 +57,8 @@ export function PetCorner({ settings, boss = false, onHide, water }: { settings:
   const reminder = water.r?.mode === 'bubble' ? water.r.kind : null // 气泡方式的喝水 / 起身提醒
   const rollPhase = water.r?.mode === 'roll' ? water.r.phase : null // 卷起便签的阶段
   const [summon, setSummon] = useState<number | null>(null) // 卷便签时跑到中间（水平位移）
+  const [tossing, setTossing] = useState<Tossing>(null) // 把过去的时间扔掉
+  const onTossRef = useRef<(t: Toss) => void>(() => undefined)
   const [idle, setIdle] = useState(0)
   const [now, setNow] = useState(() => new Date())
   const [awakeUntil, setAwakeUntil] = useState(0)
@@ -168,8 +191,15 @@ export function PetCorner({ settings, boss = false, onHide, water }: { settings:
     }
   }, [rollPhase])
 
+  // 把过去的时间扔掉：倒计时跨过整点 / 半点时，数字飞到狗狗嘴里，狗狗甩头扔出便签
+  useEffect(() => {
+    const h = (e: Event) => onTossRef.current((e as CustomEvent<Toss>).detail)
+    window.addEventListener('deskpin:countdown-toss', h)
+    return () => window.removeEventListener('deskpin:countdown-toss', h)
+  }, [])
+
   // 眼睛跟着鼠标（醒着、没在做动作时）
-  const tracking = !sleepy && mood !== 'happy' && mood !== 'celebrate' && !action && !play && !walk && !typingLook && !menu && summon === null
+  const tracking = !sleepy && mood !== 'happy' && mood !== 'celebrate' && !action && !play && !walk && !typingLook && !menu && summon === null && !tossing
   useEffect(() => {
     if (!tracking) { setLook(undefined); return }
     let raf = 0
@@ -192,7 +222,7 @@ export function PetCorner({ settings, boss = false, onHide, water }: { settings:
   }, [tracking])
 
   // ---- 自主动作（三期）----
-  const idleBusy = !!(action || play || walk || drag !== null || menu || naming || confirmHide || bubble || water.r || summon !== null || transient || typingLook)
+  const idleBusy = !!(action || play || walk || drag !== null || menu || naming || confirmHide || bubble || water.r || summon !== null || tossing || transient || typingLook)
   busyRef.current = !canIdle({ mood, busy: idleBusy, boss, hidden: false }) // 是否隐藏在计时器触发时再看
   const stopIdle = () => {
     idleTimers.current.forEach(clearTimeout); idleTimers.current = []
@@ -232,6 +262,23 @@ export function PetCorner({ settings, boss = false, onHide, water }: { settings:
     t(() => setAction((a) => (a === act ? null : a)), IDLE_ACTS[act].ms)
   }
   runIdleRef.current = runIdle
+
+  onTossRef.current = (t: Toss) => {
+    // 睡觉、卷便签、玩球、被拖着、菜单 / 对话框开着、正在扔时不扔（倒计时照常走）
+    if (sleepy || boss || rollPhase || play || drag !== null || menu || naming || confirmHide || tossing) return
+    const from = digitRect(t.kind === 'hour')
+    const dog = btnRef.current?.getBoundingClientRect()
+    if (!from || !dog) return
+    stopIdle()
+    const x = from.left + from.width / 2, y = from.top + from.height / 2
+    const mx = dog.left + dog.width * 0.5 - x, my = dog.top + dog.height * 0.5 - y // 狗嘴
+    const left = settings.petCorner === 'left'
+    const ex = (left ? -70 : window.innerWidth + 70) - x, ey = dog.top - 140 - y // 甩出便签外
+    setTossing({ text: t.text, x, y, mx, my, ax: mx * 0.5, ay: Math.min(my, 0) - 40, ex, ey, n: Date.now() })
+    later(() => setTossing(null), TOSS_MS)
+    const line = tossLine(t, Math.random())
+    if (line) later(() => say(line, 3000), TOSS_MS - 200)
+  }
 
   // 看你打字：在便签的输入框里打字时盯着输入框，停下 2 秒后恢复
   useEffect(() => {
@@ -406,7 +453,7 @@ export function PetCorner({ settings, boss = false, onHide, water }: { settings:
   return (
     <>
       <div ref={rootRef} className={`pet ${left ? 'left' : 'right'}${drag !== null ? ' dragging' : ''}${play ? ' playing' : ''}${walk ? ' walking' : ''}${typingLook ? ' typing' : ''}${summon !== null ? ' summoned' : ''}`} data-testid="pet"
-        style={{ transform: dx ? `translateX(${dx}px)` : undefined }} data-play={play?.phase ?? ''} data-walk={walk ? (Math.abs(walk.dx) > 1 ? 'out' : 'back') : ''} data-typing={typingLook ? '1' : ''} data-roll={rollPhase ?? ''}>
+        style={{ transform: dx ? `translateX(${dx}px)` : undefined }} data-play={play?.phase ?? ''} data-walk={walk ? (Math.abs(walk.dx) > 1 ? 'out' : 'back') : ''} data-typing={typingLook ? '1' : ''} data-roll={rollPhase ?? ''} data-toss={tossing ? '1' : ''}>
         {(bubble || reminder) && !rollPhase && ( /* 卷便签期间不冒气泡：窗口矮时气泡会露到卷帘上面 */
           <div className="petbubble" role="status" data-testid="pet-bubble" onClick={() => !reminder && setBubble('')}>
             {reminder ? (
@@ -429,6 +476,11 @@ export function PetCorner({ settings, boss = false, onHide, water }: { settings:
           </span>
         </button>
       </div>
+      {tossing && (
+        <div key={tossing.n} className="tossbit" data-testid="toss-bit" aria-hidden="true"
+          style={{ left: tossing.x, top: tossing.y, '--mx': `${tossing.mx}px`, '--my': `${tossing.my}px`, '--ax': `${tossing.ax}px`, '--ay': `${tossing.ay}px`,
+            '--ex': `${tossing.ex}px`, '--ey': `${tossing.ey}px`, '--spin': settings.petCorner === 'left' ? '-540deg' : '540deg' } as CSSProperties}>{tossing.text}</div>
+      )}
       {play && play.phase !== 'back' && <div className={`petball ${left ? 'left' : 'right'} ${play.phase}`} data-testid="pet-ball" style={{ '--ball-x': `${play.ballX}px` } as CSSProperties} />}
       {/* 菜单 / 对话框放在角落容器外面：容器是 pointer-events: none（不挡住下面的事项），放在里面会点不到 */}
       {menu && <Menu x={menu.x} y={menu.y} entries={entries} onClose={() => setMenu(null)} />}

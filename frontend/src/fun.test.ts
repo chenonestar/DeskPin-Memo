@@ -234,3 +234,53 @@ describe('卷起便签', () => {
     expect(waterDue({ ...inp, now: new Date(now.getTime() + 10 * 60_000) })).toBe(true)
   })
 })
+
+import { tossEvent, tossLine, waterCheck } from './fun'
+
+describe('喝水提醒的状态（用于日志）', () => {
+  const base = { now: new Date(2026, 10, 16, 10, 0), enabled: true, intervalMin: 45, lastAt: null, workStart: '09:00', workEnd: '18:00',
+    dnd: { enabled: false, start: '12:00', end: '13:00' }, idleSeconds: 0, boss: false }
+  it('先看是否开着 / 上班时间，再看间隔，最后看为什么不能提醒', () => {
+    expect(waterCheck(base)).toBe('due')
+    expect(waterCheck({ ...base, enabled: false })).toBe('off')
+    expect(waterCheck({ ...base, now: new Date(2026, 10, 15, 10, 0) })).toBe('off') // 星期日
+    expect(waterCheck({ ...base, now: new Date(2026, 10, 16, 19, 0) })).toBe('off')
+    expect(waterCheck({ ...base, now: new Date(2026, 10, 16, 9, 30) })).toBe('notyet')
+    expect(waterCheck({ ...base, now: new Date(2026, 10, 16, 9, 30), boss: true, idleSeconds: 9999 })).toBe('notyet') // 没到点不记原因
+    expect(waterCheck({ ...base, boss: true })).toBe('boss')
+    expect(waterCheck({ ...base, dnd: { enabled: true, start: '09:30', end: '11:00' } })).toBe('dnd')
+    expect(waterCheck({ ...base, idleSeconds: 301 })).toBe('away')
+  })
+})
+
+describe('狗狗把过去的时间扔掉', () => {
+  const at = (h: number, m: number, s = 0) => new Date(2026, 10, 16, h, m, s) // 星期一
+  const toss = (a: Date, b: Date, mode: 'hour' | 'half' | 'off' = 'hour') => tossEvent(a, b, '09:00', '18:00', mode)
+  it('每小时：剩余从 3:00 变成 2:59 时扔掉「3」', () => {
+    expect(toss(at(14, 59, 0), at(14, 59, 15))).toBeNull() // 3:01 → 3:00
+    expect(toss(at(14, 59, 50), at(15, 0, 5))).toEqual({ kind: 'hour', text: '3', last: false }) // 3:00 → 2:59
+    expect(toss(at(15, 0, 50), at(15, 1, 5))).toBeNull() // 2:59 → 2:58
+    expect(toss(at(15, 59, 55), at(16, 0, 10))).toEqual({ kind: 'hour', text: '2', last: false })
+    expect(toss(at(16, 59, 55), at(17, 0, 10))).toEqual({ kind: 'hour', text: '1', last: true }) // 进入最后一小时
+    expect(toss(at(9, 59, 55), at(10, 0, 10))).toEqual({ kind: 'hour', text: '8', last: false })
+  })
+  it('每 30 分钟：跨过半点扔一个「30 分」', () => {
+    expect(toss(at(15, 29, 55), at(15, 30, 10), 'half')).toEqual({ kind: 'half', text: '30 分', last: false }) // 2:30 → 2:29
+    expect(toss(at(14, 59, 50), at(15, 0, 5), 'half')).toEqual({ kind: 'half', text: '30 分', last: false })
+    expect(toss(at(15, 10, 0), at(15, 10, 15), 'half')).toBeNull()
+    expect(toss(at(16, 59, 55), at(17, 0, 10), 'half')?.last).toBe(true)
+  })
+  it('关闭、间隔太久、不在上班时间都不扔', () => {
+    expect(toss(at(14, 59, 50), at(15, 0, 5), 'off')).toBeNull()
+    expect(toss(at(14, 50), at(15, 10))).toBeNull() // 电脑睡了 20 分钟
+    expect(toss(at(17, 59, 50), at(18, 0, 5))).toBeNull() // 下班了：已有伸懒腰
+    expect(toss(at(8, 59, 50), at(9, 0, 5))).toBeNull()
+    expect(tossEvent(new Date(2026, 10, 15, 14, 59, 50), new Date(2026, 10, 15, 15, 0, 5), '09:00', '18:00', 'hour')).toBeNull() // 周日
+  })
+  it('说的话：最后一小时一定说，其余约三分之一', () => {
+    expect(tossLine({ kind: 'hour', text: '1', last: true }, 0.99)).toBe('最后一小时，坚持住！')
+    expect(tossLine({ kind: 'hour', text: '3', last: false }, 0.1)).toBe('又熬过一小时！')
+    expect(tossLine({ kind: 'hour', text: '3', last: false }, 0.5)).toBeNull()
+    expect(tossLine({ kind: 'half', text: '30 分', last: false }, 0.2)).toBe('又过了半小时～')
+  })
+})

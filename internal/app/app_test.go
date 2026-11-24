@@ -1,8 +1,11 @@
 package app
 
 import (
+	"bytes"
+	"log"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"deskpinmemo/internal/scheduler"
@@ -486,5 +489,71 @@ func TestPetAlertSuspendsClickThroughAndFade(t *testing.T) {
 	a.SetPetAlert(false)
 	if sh.ClickThrough {
 		t.Fatal("强提醒还没处理时不能因为狗狗结束而恢复穿透")
+	}
+}
+
+func TestPetAlertKeepOpacityOption(t *testing.T) {
+	a, sh := newApp(t)
+	s := a.svc.GetSettings()
+	s.PetRollKeepOpacity, s.FadeOnLeave, s.FadedOpacity = true, true, 0.4
+	if _, err := a.SaveSettings(s); err != nil {
+		t.Fatal(err)
+	}
+	a.SetClickThrough(true)
+	if _, err := a.SetWindowOpacity(0.78); err != nil {
+		t.Fatal(err)
+	}
+	a.SetPetAlert(true)
+	if sh.ClickThrough || sh.Opacity != 0.78 {
+		t.Fatalf("保持透明度：仍要暂停穿透，透明度不变: ct=%v opacity=%v", sh.ClickThrough, sh.Opacity)
+	}
+	a.SetPetAlert(false)
+	a.SetClickThrough(false)
+	a.SetFaded(true) // 鼠标离开：平时会变淡到 40%
+	if sh.Opacity != 0.4 {
+		t.Fatalf("前提：鼠标离开后变淡 %v", sh.Opacity)
+	}
+	a.SetPetAlert(true)
+	if sh.Opacity != 0.78 {
+		t.Fatalf("卷便签期间不自动变淡，按设好的透明度显示: %v", sh.Opacity)
+	}
+	a.SetPetAlert(false)
+	if sh.Opacity != 0.4 {
+		t.Fatalf("展开后恢复变淡: %v", sh.Opacity)
+	}
+}
+
+func TestPetLogOnlyFixedText(t *testing.T) {
+	a, _ := newApp(t)
+	var buf bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(old) })
+	a.PetLog("water.roll", "water")
+	a.PetLog("water.skip.away", "stand")
+	a.PetLog("我的秘密事项", "water")
+	a.PetLog("water.done", "我的秘密事项")
+	out := buf.String()
+	for _, want := range []string{"（喝水）：卷起便签", "（起身）：到点了，但离开电脑超过 5 分钟", "喝水 / 起身提醒：已确认"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("缺少 %q：\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "秘密") {
+		t.Fatalf("只能记固定的话：\n%s", out)
+	}
+}
+
+func TestBossModeLogged(t *testing.T) {
+	a, _ := newApp(t)
+	var buf bytes.Buffer
+	old := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(old) })
+	a.SetBossMode(true)
+	a.SetBossMode(true) // 没变化不重复记
+	a.SetBossMode(false)
+	if got := strings.Count(buf.String(), "正经模式："); got != 2 || !strings.Contains(buf.String(), "正经模式：开启") {
+		t.Fatalf("开关各记一行：\n%s", buf.String())
 	}
 }

@@ -133,11 +133,13 @@ export interface Settings {
   petWaterInterval: number
   petWaterNotify: boolean
   petWaterStyle: 'roll' | 'bubble' // 提醒方式：卷起便签（默认）| 只冒气泡
+  petRollKeepOpacity: boolean // 卷起时保持便签的透明度
   showCountdown: boolean
   workStart: string
   workEnd: string
   monthlySalary: number
   countdownMoney: 'hover' | 'always' | 'never'
+  countdownToss: 'hour' | 'half' | 'off' // 狗狗把过去的时间扔掉：每小时 | 每 30 分钟 | 关闭
   hotkeyBoss: string
   bossGroupId: string
 }
